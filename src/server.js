@@ -3,11 +3,20 @@ const app        = require('./app');
 const { testDb } = require('./config/db');
 const PORT = process.env.PORT || 5000;
 
-testDb().then(() => {
-  app.listen(PORT, () => {
-    console.log('\n🌙 Moonlight Accessories API');
-    console.log(`   Server : http://localhost:${PORT}`);
-    console.log(`   Env    : ${process.env.NODE_ENV}`);
-    console.log(`   Docs   : http://localhost:${PORT}/api/docs\n`);
-  });
-}).catch(err => { console.error('❌ DB failed:', err.message); process.exit(1); });
+app.listen(PORT, () => {
+  console.log('\n🌙 Moonlight Accessories API');
+  console.log(`   Server : http://localhost:${PORT}`);
+  console.log(`   Env    : ${process.env.NODE_ENV}`);
+  console.log(`   Docs   : http://localhost:${PORT}/api/docs\n`);
+
+  const tryConnect = (attempts = 1) => {
+    testDb()
+      .then(() => console.log('✅ Database ready'))
+      .catch(err => {
+        console.error(`❌ DB attempt ${attempts} failed: ${err.message}`);
+        if (attempts < 10) setTimeout(() => tryConnect(attempts + 1), 3000);
+        else { console.error('❌ DB unavailable after 10 attempts. Exiting.'); process.exit(1); }
+      });
+  };
+  tryConnect();
+});
