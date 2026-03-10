@@ -1,0 +1,7 @@
+node_modules/
+.env
+uploads/products/*.jpg
+uploads/products/*.png
+uploads/products/*.webp
+*.log
+.DS_Store
