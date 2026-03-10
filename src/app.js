@@ -24,6 +24,7 @@ app.use(cors({
     process.env.FRONTEND_URL || 'http://localhost:3000',
     'http://localhost:5500',
     'http://127.0.0.1:5500',
+    'null', // file:// protocol for local HTML
   ],
   credentials: true,
   methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
