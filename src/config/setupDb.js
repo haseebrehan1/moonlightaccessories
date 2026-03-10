@@ -178,8 +178,11 @@ async function main() {
     CREATE SEQUENCE IF NOT EXISTS order_seq START 1000;
   `);
   console.log('✅ Schema created!\n');
-  console.log('Next: npm run db:seed\n');
-  await pool.end();
 }
 
-main().catch(err => { console.error('❌', err.message); process.exit(1); });
+async function runSetup() { await main(); }
+module.exports = { runSetup };
+
+if (require.main === module) {
+  main().then(() => pool.end()).catch(err => { console.error('❌', err.message); process.exit(1); });
+}

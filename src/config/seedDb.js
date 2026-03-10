@@ -92,8 +92,12 @@ async function seed() {
   console.log('✅ Database seeded!\n');
   console.log('  Admin:', process.env.ADMIN_EMAIL || 'admin@moonlightaccessories.pk');
   console.log('  Pass: ', process.env.ADMIN_PASSWORD || 'Admin@123');
-  console.log('\nRun: npm run dev\n');
-  await pool.end();
+  console.log('\n✅ Seed complete\n');
 }
 
-seed().catch(err => { console.error('❌', err.message); process.exit(1); });
+async function runSeed() { await seed(); }
+module.exports = { runSeed };
+
+if (require.main === module) {
+  seed().then(() => pool.end()).catch(err => { console.error('❌', err.message); process.exit(1); });
+}
