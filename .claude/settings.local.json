@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git init:*)",
+      "Bash(railway up:*)",
+      "Bash(railway add:*)",
+      "Bash(railway variables:*)",
+      "Bash(sleep 30 && curl -s https://moonlight-backend-production.up.railway.app/api/health 2>&1)",
+      "Bash(git add:*)",
+      "Bash(sleep 40 && curl -s https://moonlight-backend-production.up.railway.app/api/health 2>&1)",
+      "Bash(railway logs:*)",
+      "Bash(curl -s https://moonlight-backend-production.up.railway.app/api/health 2>&1)",
+      "Bash(railway run:*)",
+      "Bash(DATABASE_URL=\"postgresql://postgres:kJLCZoquHvHZfuIpwexfTYVAWQnHauGE@yamabiko.proxy.rlwy.net:42151/railway\" node src/config/setupDb.js 2>&1)",
+      "Bash(DATABASE_URL=\"postgresql://postgres:kJLCZoquHvHZfuIpwexfTYVAWQnHauGE@yamabiko.proxy.rlwy.net:42151/railway?sslmode=no-verify\" node src/config/setupDb.js 2>&1)",
+      "Bash(sleep 50 && curl -s https://moonlight-backend-production.up.railway.app/api/v1/products 2>&1 | head -c 300)",
+      "Bash(sleep 50 && curl -s https://moonlight-backend-production.up.railway.app/api/v1/products 2>&1 | head -c 500)",
+      "Bash(sleep 50 && curl -s https://moonlight-backend-production.up.railway.app/api/health && echo \"\" && curl -s https://moonlight-backend-production.up.railway.app/api/v1/products 2>&1 | head -c 300)",
+      "Bash(curl -s https://moonlight-backend-production.up.railway.app/api/health && curl -s https://moonlight-backend-production.up.railway.app/api/v1/products 2>&1 | head -c 400)",
+      "Bash(curl -s --max-time 15 \"https://moonlight-backend-production.up.railway.app/api/health\" 2>&1)",
+      "Bash(sleep 30 && curl -s --max-time 20 \"https://moonlight-backend-production.up.railway.app/api/health\" 2>&1)",
+      "Bash(curl -s --max-time 10 \"https://google.com\" > /dev/null && echo \"Network OK\" || echo \"Network issue\")",
+      "Bash(curl -s --max-time 20 \"https://moonlight-backend-production.up.railway.app/api/health\" 2>&1)",
+      "Bash(curl -s https://moonlight-backend-production.up.railway.app/api/v1/products 2>&1 | head -c 400)",
+      "Bash(curl -s --max-time 15 \"https://moonlight-backend-production.up.railway.app/api/health\")",
+      "Bash(nslookup moonlight-backend-production.up.railway.app)",
+      "Bash(curl -s --max-time 20 --dns-servers 8.8.8.8 \"https://moonlight-backend-production.up.railway.app/api/health\" 2>&1)",
+      "Bash(npm run:*)",
+      "Bash(start \"\" \"C:\\\\Users\\\\LENOVO\\\\Downloads\\\\moonlight-frontend\\\\index.html\")",
+      "Bash(start \"\" \"C:\\\\Users\\\\LENOVO\\\\Downloads\\\\moonlight-backend\\\\admin.html\")"
+    ]
+  }
+}
