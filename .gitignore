@@ -1,5 +1,9 @@
 node_modules/
 .env
+
+# Local machine-specific Claude Code settings — never commit.
+# This file leaked a server root password and a DB connection string.
+.claude/settings.local.json
 uploads/products/*.jpg
 uploads/products/*.png
 uploads/products/*.webp
