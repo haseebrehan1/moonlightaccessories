@@ -632,6 +632,133 @@
     }
     .variant-item input[type="number"]:focus { border-color: var(--accent); }
 
+    /* ── IMAGE MANAGER ── */
+    .img-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 12px;
+      margin-top: 10px;
+      max-height: 260px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .img-card {
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      position: relative;
+      background: var(--bg);
+    }
+    .img-card img {
+      width: 100%;
+      height: 100px;
+      object-fit: cover;
+      display: block;
+    }
+    .img-card-info {
+      padding: 6px 8px;
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+    }
+    .img-primary-badge {
+      background: #fff3cd;
+      color: #856404;
+      padding: 1px 6px;
+      border-radius: 99px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .img-delete-btn {
+      position: absolute;
+      top: 5px;
+      right: 5px;
+      background: rgba(239,68,68,0.9);
+      color: #fff;
+      border: none;
+      border-radius: 50%;
+      width: 22px;
+      height: 22px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .img-upload-box {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 24px 18px;
+      margin-top: 14px;
+      background: var(--bg);
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      text-align: center;
+    }
+    .img-upload-box:hover, .img-upload-box.drag-over {
+      border-color: var(--accent);
+      background: #fff5f5;
+    }
+    .img-drop-hint { pointer-events: none; }
+    .img-drop-icon { font-size: 36px; margin-bottom: 8px; }
+    .img-drop-text { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .img-drop-sub  { font-size: 12px; color: var(--text-muted); }
+    .img-pending-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 12px;
+      text-align: left;
+      margin-bottom: 14px;
+      max-height: 300px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .img-pending-card {
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .img-pending-card img {
+      width: 100%;
+      height: 100px;
+      object-fit: cover;
+      display: block;
+    }
+    .img-pending-meta {
+      padding: 6px 8px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .img-pending-meta select {
+      width: 100%;
+      font-size: 11px;
+      padding: 3px 5px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: #fff;
+    }
+    .img-pending-meta label {
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      color: var(--text-muted);
+    }
+    .img-upload-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      text-align: left;
+    }
+
     /* ── ORDER DETAIL ── */
     .order-info-grid {
       display: grid;
@@ -1037,7 +1164,7 @@
 <div class="modal-overlay" id="product-modal-overlay" onclick="closeProductModal(event)">
   <div class="modal modal-lg">
     <div class="modal-header">
-      <div class="modal-title">Add New Product</div>
+      <div class="modal-title" id="product-modal-title">Add New Product</div>
       <button class="modal-close" onclick="closeModal('product-modal-overlay')">✕</button>
     </div>
     <div class="modal-body">
@@ -1056,15 +1183,21 @@
         </div>
         <div class="form-group">
           <label>Category *</label>
-          <select id="p-category">
+          <select id="p-category" onchange="document.getElementById('p-type').value=this.value">
             <option value="">Select category</option>
             <option value="straight">Straight</option>
-            <option value="blowdry">Blowdry</option>
+            <option value="blowdry">Blow Dry</option>
+            <option value="curls">Curls</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Type</label>
-          <input type="text" id="p-type" placeholder="e.g. clip-in, tape-in" />
+          <label>Type *</label>
+          <select id="p-type">
+            <option value="">Select type</option>
+            <option value="straight">Straight</option>
+            <option value="blowdry">Blow Dry</option>
+            <option value="curls">Curls</option>
+          </select>
         </div>
         <div class="form-group">
           <label>Badge</label>
@@ -1091,10 +1224,41 @@
       <div class="variants-grid" id="variants-grid">
         <!-- filled by JS -->
       </div>
+
+      <!-- IMAGE SECTION — shown only when editing an existing product -->
+      <div id="p-image-section" style="display:none">
+        <div class="divider"></div>
+        <div class="section-label">Current Images</div>
+        <div id="img-grid-container">
+          <div class="img-grid" id="img-grid"></div>
+        </div>
+        <div class="divider"></div>
+        <div class="section-label">Upload Photos</div>
+        <div class="img-upload-box" id="img-drop-zone"
+             onclick="document.getElementById('img-file-input').click()"
+             ondragover="event.preventDefault();this.classList.add('drag-over')"
+             ondragleave="this.classList.remove('drag-over')"
+             ondrop="handleImgDrop(event)">
+          <input type="file" id="img-file-input" accept=".jpg,.jpeg,.png,.webp" multiple style="display:none" onchange="handleFileSelection()" />
+          <div class="img-drop-hint" id="img-drop-hint">
+            <div class="img-drop-icon">📷</div>
+            <div class="img-drop-text">Click to select photos or drag &amp; drop</div>
+            <div class="img-drop-sub">JPG, PNG, WEBP &nbsp;·&nbsp; Multiple files allowed</div>
+          </div>
+          <div id="img-pending-container" style="display:none" onclick="event.stopPropagation()">
+            <div class="img-pending-grid" id="img-pending-grid"></div>
+            <div class="img-upload-actions">
+              <button class="btn btn-primary" onclick="uploadAllImages()" id="img-upload-btn">Upload All</button>
+              <button class="btn btn-secondary" onclick="clearPendingImages()">Clear</button>
+              <span id="img-upload-progress" style="font-size:13px;color:var(--text-muted)"></span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeModal('product-modal-overlay')">Cancel</button>
-      <button class="btn btn-primary" onclick="submitProduct()">Add Product</button>
+      <button class="btn btn-primary" id="product-modal-submit-btn" onclick="submitProduct()">Add Product</button>
     </div>
   </div>
 </div>
@@ -1106,14 +1270,14 @@
 // ═══════════════════════════════════════════════════════════
 //  CONSTANTS & STATE
 // ═══════════════════════════════════════════════════════════
-const API_BASE = 'http://localhost:5000/api/v1';
+const API_BASE = '/api/v1';
 const SHADES = [
-  { key: 'black',   label: 'Black' },
-  { key: 'choco',   label: 'Choco' },
-  { key: 'hazel',   label: 'Hazel' },
-  { key: 'blackHL', label: 'Black Highlight' },
-  { key: 'chocoHL', label: 'Choco Highlight' },
-  { key: 'hazelHL', label: 'Hazel Highlight' },
+  { key: 'jetblack',  label: 'Jet Black' },
+  { key: 'natural',   label: 'Natural Black' },
+  { key: 'medbrown',  label: 'Medium Brown' },
+  { key: 'darkbrown', label: 'Dark Brown' },
+  { key: 'moka',      label: 'Moka Brown' },
+  { key: 'mahogany',  label: 'Mahogany' },
 ];
 const STATUSES = ['pending','confirmed','processing','shipped','delivered','cancelled'];
 
@@ -1122,6 +1286,7 @@ let allOrders = [];
 let allProducts = [];
 let allCustomers = [];
 let currentOrderId = null;
+let editProductId = null;
 
 // ═══════════════════════════════════════════════════════════
 //  INIT
@@ -1490,6 +1655,7 @@ function renderProducts(products) {
       <td>${isActive ? '<span class="badge badge-active">Active</span>' : '<span class="badge badge-inactive">Inactive</span>'}</td>
       <td onclick="event.stopPropagation()">
         <div class="actions-cell">
+          <button class="btn btn-sm btn-primary" onclick="openEditProduct('${id}')">Edit / Photos</button>
           <button class="btn btn-sm ${isActive?'btn-secondary':'btn-primary'}" onclick="toggleProduct('${id}', ${!isActive})">
             ${isActive ? 'Deactivate' : 'Activate'}
           </button>
@@ -1511,6 +1677,177 @@ async function toggleProduct(id, newActive) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════
+//  IMAGE MANAGER
+// ═══════════════════════════════════════════════════════════
+let currentImgProductId = null;
+
+async function openImageModal(productId, productName) {
+  currentImgProductId = productId;
+  document.getElementById('img-modal-title').textContent = `Images — ${productName}`;
+  clearPendingImages();
+  openModal('img-modal-overlay');
+  await loadProductImages(productId);
+}
+
+function closeImgModal(e) {
+  if (e.target === document.getElementById('img-modal-overlay')) closeModal('img-modal-overlay');
+}
+
+async function loadProductImages(productId) {
+  const grid = document.getElementById('img-grid');
+  grid.innerHTML = `<div style="color:var(--text-muted);font-size:13px;padding:10px 0"><span class="spinner"></span> Loading…</div>`;
+  try {
+    const data = await api('GET', `/admin/products/${productId}/images`);
+    const images = data.images || [];
+    if (!images.length) {
+      grid.innerHTML = `<div style="color:var(--text-muted);font-size:13px;padding:10px 0">No images yet. Upload one below.</div>`;
+      return;
+    }
+    grid.innerHTML = images.map(img => `
+      <div class="img-card" id="imgcard-${img.id}">
+        <img src="${API_BASE.replace('/api/v1','')}${img.url}" alt="${img.alt_text||''}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22><rect fill=%22%23eee%22 width=%22100%25%22 height=%22100%25%22/><text x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22%23999%22>?</text></svg>'" />
+        <button class="img-delete-btn" onclick="deleteProductImage(${img.id})">✕</button>
+        <div class="img-card-info">
+          <span>${img.shade_key || 'General'}</span>
+          ${img.is_primary ? '<span class="img-primary-badge">Primary</span>' : ''}
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {
+    grid.innerHTML = `<div style="color:var(--danger);font-size:13px;padding:10px 0">Failed to load images: ${e.message}</div>`;
+  }
+}
+
+async function deleteProductImage(imageId) {
+  if (!confirm('Delete this image?')) return;
+  try {
+    await api('DELETE', `/admin/products/images/${imageId}`);
+    document.getElementById(`imgcard-${imageId}`)?.remove();
+    const grid = document.getElementById('img-grid');
+    if (!grid.children.length) {
+      grid.innerHTML = `<div style="color:var(--text-muted);font-size:13px;padding:10px 0">No images yet. Upload one below.</div>`;
+    }
+    toast('Image deleted', 'success');
+  } catch(e) {
+    toast('Failed to delete: ' + e.message, 'error');
+  }
+}
+
+const SHADE_OPTIONS = `
+  <option value="">— No shade —</option>
+  <option value="jetblack">Jet Black</option>
+  <option value="natural">Natural Black</option>
+  <option value="medbrown">Medium Brown</option>
+  <option value="darkbrown">Dark Brown</option>
+  <option value="moka">Moka Brown</option>
+  <option value="mahogany">Mahogany</option>
+`;
+
+let pendingFiles = [];
+
+function handleImgDrop(e) {
+  e.preventDefault();
+  document.getElementById('img-drop-zone').classList.remove('drag-over');
+  const files = Array.from(e.dataTransfer.files).filter(f =>
+    /\.(jpg|jpeg|png|webp)$/i.test(f.name)
+  );
+  if (!files.length) { toast('Only JPG, PNG, WEBP files are allowed', 'warning'); return; }
+  buildPendingGrid(files);
+}
+
+function handleFileSelection() {
+  const files = Array.from(document.getElementById('img-file-input').files);
+  if (!files.length) return;
+  buildPendingGrid(files);
+}
+
+function buildPendingGrid(files) {
+  pendingFiles = files;
+  const grid = document.getElementById('img-pending-grid');
+  grid.innerHTML = files.map((f, i) => `
+    <div class="img-pending-card" id="pending-card-${i}">
+      <img src="${URL.createObjectURL(f)}" alt="${f.name}" />
+      <div class="img-pending-meta">
+        <div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${f.name}">${f.name}</div>
+        <select id="pending-shade-${i}">${SHADE_OPTIONS}</select>
+        <label>
+          <input type="checkbox" id="pending-primary-${i}" />
+          Set as Primary
+        </label>
+      </div>
+    </div>
+  `).join('');
+  document.getElementById('img-upload-btn').textContent = `Upload ${files.length} Photo${files.length > 1 ? 's' : ''}`;
+  document.getElementById('img-drop-hint').style.display = 'none';
+  document.getElementById('img-pending-container').style.display = 'block';
+  document.getElementById('img-upload-progress').textContent = '';
+}
+
+function clearPendingImages() {
+  pendingFiles = [];
+  document.getElementById('img-file-input').value = '';
+  document.getElementById('img-pending-grid').innerHTML = '';
+  document.getElementById('img-pending-container').style.display = 'none';
+  document.getElementById('img-drop-hint').style.display = 'block';
+  document.getElementById('img-upload-progress').textContent = '';
+}
+
+async function uploadAllImages() {
+  if (!pendingFiles.length) return;
+
+  const MAX_SIZE_MB = 10;
+  const oversized = pendingFiles.filter(f => f.size > MAX_SIZE_MB * 1024 * 1024);
+  if (oversized.length) {
+    toast(`${oversized.length} file(s) exceed ${MAX_SIZE_MB}MB limit. Please use smaller images.`, 'error');
+    return;
+  }
+
+  const btn = document.getElementById('img-upload-btn');
+  const progress = document.getElementById('img-upload-progress');
+  btn.disabled = true;
+  let done = 0, failed = 0;
+  const errors = [];
+
+  for (let i = 0; i < pendingFiles.length; i++) {
+    progress.textContent = `Uploading ${i + 1} / ${pendingFiles.length}…`;
+    const card = document.getElementById(`pending-card-${i}`);
+    try {
+      const form = new FormData();
+      form.append('image', pendingFiles[i]);
+      form.append('product_id', currentImgProductId);
+      form.append('shade_key', document.getElementById(`pending-shade-${i}`).value);
+      form.append('is_primary', document.getElementById(`pending-primary-${i}`).checked ? 'true' : 'false');
+
+      const res = await fetch(`${API_BASE}/upload/product-image`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      let data;
+      try { data = await res.json(); } catch(_) { data = {}; }
+      if (!res.ok || !data.success) throw new Error(data.message || `Server error ${res.status}`);
+      if (card) card.style.opacity = '0.4';
+      done++;
+    } catch(e) {
+      if (card) card.style.outline = '2px solid var(--danger)';
+      errors.push(e.message);
+      failed++;
+    }
+  }
+
+  btn.disabled = false;
+  progress.textContent = '';
+  if (failed === 0) {
+    toast(`${done} photo${done > 1 ? 's' : ''} uploaded!`, 'success');
+    clearPendingImages();
+  } else {
+    const reason = errors[0] ? `: ${errors[0]}` : '';
+    toast(`${done} uploaded, ${failed} failed${reason}`, 'error');
+  }
+  await loadProductImages(currentImgProductId);
+}
+
 function buildVariantsGrid() {
   const grid = document.getElementById('variants-grid');
   grid.innerHTML = SHADES.map(s => `
@@ -1528,9 +1865,12 @@ function buildVariantsGrid() {
 }
 
 function openProductModal() {
-  // Reset form
-  ['p-name','p-slug','p-description','p-type','p-badge','p-features'].forEach(id => document.getElementById(id).value = '');
+  editProductId = null;
+  document.getElementById('product-modal-title').textContent = 'Add New Product';
+  document.getElementById('product-modal-submit-btn').textContent = 'Add Product';
+  ['p-name','p-slug','p-description','p-badge','p-features'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('p-category').value = '';
+  document.getElementById('p-type').value = '';
   document.getElementById('p-price').value = '';
   document.getElementById('p-featured').checked = false;
   SHADES.forEach(s => {
@@ -1539,7 +1879,49 @@ function openProductModal() {
     stockEl.value = '0';
     stockEl.style.display = 'none';
   });
+  document.getElementById('p-image-section').style.display = 'none';
+  clearPendingImages();
   openModal('product-modal-overlay');
+}
+
+function openImageModal(productId, productName) {
+  openEditProduct(productId);
+}
+
+async function openEditProduct(id) {
+  editProductId = id;
+  currentImgProductId = id;
+  document.getElementById('product-modal-title').textContent = 'Edit Product';
+  document.getElementById('product-modal-submit-btn').textContent = 'Save Changes';
+  document.getElementById('p-image-section').style.display = 'block';
+  clearPendingImages();
+  openModal('product-modal-overlay');
+  loadProductImages(id);
+  try {
+    const data = await api('GET', `/admin/products/${id}`);
+    const p = data.product;
+    document.getElementById('p-name').value = p.name || '';
+    document.getElementById('p-slug').value = p.slug || '';
+    document.getElementById('p-description').value = p.description || '';
+    document.getElementById('p-category').value = p.category || '';
+    document.getElementById('p-type').value = p.type || '';
+    document.getElementById('p-price').value = p.price || '';
+    document.getElementById('p-badge').value = p.badge || '';
+    document.getElementById('p-featured').checked = !!(p.isFeatured || p.is_featured);
+    document.getElementById('p-features').value = (p.features || []).join(', ');
+    const variants = p.variants || [];
+    SHADES.forEach(s => {
+      const v = variants.find(x => x.shade_key === s.key);
+      const cb = document.getElementById(`var-${s.key}`);
+      const stockEl = document.getElementById(`var-stock-${s.key}`);
+      cb.checked = !!v;
+      stockEl.value = v ? (v.stock_qty ?? 0) : '0';
+      stockEl.style.display = v ? 'block' : 'none';
+    });
+  } catch(e) {
+    toast('Failed to load product: ' + e.message, 'error');
+    closeModal('product-modal-overlay');
+  }
 }
 
 function closeProductModal(e) {
@@ -1556,25 +1938,25 @@ async function submitProduct() {
   const slug = document.getElementById('p-slug').value.trim();
   const description = document.getElementById('p-description').value.trim();
   const category = document.getElementById('p-category').value;
-  const price = parseFloat(document.getElementById('p-price').value);
+  const type     = document.getElementById('p-type').value;
+  const price    = parseFloat(document.getElementById('p-price').value);
 
-  if (!name || !slug || !description || !category || !price) {
-    toast('Please fill all required fields (Name, Slug, Description, Category, Price)', 'warning');
+  if (!name || !slug || !description || !category || !type || !price) {
+    toast('Please fill all required fields (Name, Slug, Description, Category, Type, Price)', 'warning');
     return;
   }
 
   const variants = [];
   SHADES.forEach(s => {
     if (document.getElementById(`var-${s.key}`).checked) {
-      variants.push({ shade: s.key, stock: parseInt(document.getElementById(`var-stock-${s.key}`).value) || 0 });
+      variants.push({ shade_key: s.key, stock_qty: parseInt(document.getElementById(`var-stock-${s.key}`).value) || 0 });
     }
   });
 
   const features = document.getElementById('p-features').value.split(',').map(f => f.trim()).filter(Boolean);
 
   const payload = {
-    name, slug, description, category, price,
-    type: document.getElementById('p-type').value.trim(),
+    name, slug, description, category, type, price,
     badge: document.getElementById('p-badge').value.trim(),
     is_featured: document.getElementById('p-featured').checked,
     isFeatured: document.getElementById('p-featured').checked,
@@ -1583,12 +1965,24 @@ async function submitProduct() {
   };
 
   try {
-    await api('POST', '/admin/products', payload);
-    toast('Product added successfully!', 'success');
-    closeModal('product-modal-overlay');
-    loadProducts();
+    if (editProductId) {
+      await api('PUT', `/admin/products/${editProductId}`, payload);
+      closeModal('product-modal-overlay');
+      loadProducts();
+      toast('Product updated!', 'success');
+    } else {
+      const data = await api('POST', '/admin/products', payload);
+      const newProduct = data.product || data.data;
+      loadProducts();
+      toast('Product added! You can now upload photos below.', 'success');
+      if (newProduct?.id) {
+        openEditProduct(newProduct.id);
+      } else {
+        closeModal('product-modal-overlay');
+      }
+    }
   } catch(e) {
-    toast('Failed to add product: ' + e.message, 'error');
+    toast(`Failed to ${editProductId ? 'update' : 'add'} product: ` + e.message, 'error');
   }
 }
 

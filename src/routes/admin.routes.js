@@ -1,4 +1,6 @@
 const router = require('express').Router();
+const fs     = require('fs');
+const path   = require('path');
 const { protect, restrictTo } = require('../middleware/auth');
 const { query } = require('../config/db');
 
@@ -102,15 +104,86 @@ router.post('/products', async (req, res, next) => {
   } catch(err) { next(err); }
 });
 
+router.get('/products/:id', async (req, res, next) => {
+  try {
+    const { rows } = await query('SELECT * FROM products WHERE id=$1', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ success:false, message:'Not found.' });
+    const p = rows[0];
+    const { rows:variants } = await query(
+      'SELECT id,shade_key,sku,stock_qty FROM product_variants WHERE product_id=$1 AND is_active=true ORDER BY id',
+      [req.params.id]
+    );
+    const { rows:features } = await query(
+      'SELECT feature FROM product_features WHERE product_id=$1 ORDER BY sort_order',
+      [req.params.id]
+    );
+    res.json({ success:true, product:{ ...p, variants, features: features.map(f=>f.feature) } });
+  } catch(err) { next(err); }
+});
+
 router.put('/products/:id', async (req, res, next) => {
   try {
-    const { name,description,badge,price,compare_price,is_featured,is_active } = req.body;
+    const { name,slug,description,category,type,badge,price,compare_price,is_featured,is_active,features,variants,isFeatured } = req.body;
     const { rows } = await query(
-      'UPDATE products SET name=COALESCE($1,name),description=COALESCE($2,description),badge=COALESCE($3,badge),price=COALESCE($4,price),compare_price=COALESCE($5,compare_price),is_featured=COALESCE($6,is_featured),is_active=COALESCE($7,is_active) WHERE id=$8 RETURNING *',
-      [name,description,badge,price,compare_price,is_featured,is_active,req.params.id]
+      `UPDATE products SET
+        name=COALESCE($1,name), slug=COALESCE($2,slug), description=COALESCE($3,description),
+        category=COALESCE($4,category), type=COALESCE($5,type), badge=COALESCE($6,badge),
+        price=COALESCE($7,price), compare_price=COALESCE($8,compare_price),
+        is_featured=COALESCE($9,is_featured), is_active=COALESCE($10,is_active)
+       WHERE id=$11 RETURNING *`,
+      [name,slug,description,category,type,badge,price,compare_price,
+       (is_featured!==undefined?is_featured:isFeatured),is_active,req.params.id]
     );
     if (!rows.length) return res.status(404).json({ success:false, message:'Not found.' });
+    const pid = req.params.id;
+    if (features !== undefined) {
+      await query('DELETE FROM product_features WHERE product_id=$1', [pid]);
+      for (let i=0;i<features.length;i++)
+        await query('INSERT INTO product_features (product_id,feature,sort_order) VALUES ($1,$2,$3)', [pid,features[i],i]);
+    }
+    if (variants !== undefined) {
+      const newKeys = variants.map(v=>v.shade_key);
+      if (newKeys.length) await query(
+        `DELETE FROM product_variants WHERE product_id=$1 AND shade_key != ALL($2::text[])`,
+        [pid, newKeys]
+      );
+      else await query('DELETE FROM product_variants WHERE product_id=$1', [pid]);
+      for (const v of variants) {
+        const { rows:existing } = await query(
+          'SELECT id FROM product_variants WHERE product_id=$1 AND shade_key=$2',
+          [pid, v.shade_key]
+        );
+        if (existing.length) {
+          await query('UPDATE product_variants SET stock_qty=$1 WHERE id=$2', [v.stock_qty||0, existing[0].id]);
+        } else {
+          const sku = `ML-${rows[0].slug.replace(/-/g,'').substring(0,8).toUpperCase()}-${v.shade_key.toUpperCase()}`;
+          await query('INSERT INTO product_variants (product_id,shade_key,sku,stock_qty) VALUES ($1,$2,$3,$4)',
+            [pid,v.shade_key,sku,v.stock_qty||0]);
+        }
+      }
+    }
     res.json({ success:true, product:rows[0] });
+  } catch(err) { next(err); }
+});
+
+router.get('/products/:id/images', async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      'SELECT * FROM product_images WHERE product_id=$1 ORDER BY is_primary DESC, sort_order, id',
+      [req.params.id]
+    );
+    res.json({ success:true, images:rows });
+  } catch(err) { next(err); }
+});
+
+router.delete('/products/images/:imageId', async (req, res, next) => {
+  try {
+    const { rows } = await query('SELECT url FROM product_images WHERE id=$1', [req.params.imageId]);
+    if (!rows.length) return res.status(404).json({ success:false, message:'Image not found.' });
+    const filePath = path.join(__dirname, '../../', rows[0].url);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    await query('DELETE FROM product_images WHERE id=$1', [req.params.imageId]);
+    res.json({ success:true, message:'Image deleted.' });
   } catch(err) { next(err); }
 });
 

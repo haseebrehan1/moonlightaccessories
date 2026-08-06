@@ -19,7 +19,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: (parseInt(process.env.MAX_FILE_SIZE_MB)||5) * 1024 * 1024 },
+  limits: { fileSize: (parseInt(process.env.MAX_FILE_SIZE_MB)||10) * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (['.jpg','.jpeg','.png','.webp'].includes(path.extname(file.originalname).toLowerCase()))
       cb(null, true);
@@ -27,11 +27,18 @@ const upload = multer({
   },
 });
 
-router.post('/product-image', protect, restrictTo('admin','superadmin'), upload.single('image'), async (req, res, next) => {
+router.post('/product-image', protect, restrictTo('admin','superadmin'), (req, res, next) => {
+  upload.single('image')(req, res, err => {
+    if (err) {
+      const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+      return res.status(status).json({ success: false, message: err.message });
+    }
+    next();
+  });
+}, async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ success:false, message:'No file uploaded.' });
     const url = `/uploads/products/${req.file.filename}`;
-    // Optionally save to DB
     if (req.body.product_id) {
       await query(
         'INSERT INTO product_images (product_id,shade_key,url,is_primary) VALUES ($1,$2,$3,$4)',

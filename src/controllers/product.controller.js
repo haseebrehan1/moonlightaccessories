@@ -22,6 +22,11 @@ const enrichProducts = async (products) => {
     FROM reviews WHERE product_id=ANY($1::uuid[]) AND is_approved=true GROUP BY product_id
   `, [ids]);
 
+  const { rows:images } = await query(
+    'SELECT id, product_id, shade_key, url, is_primary FROM product_images WHERE product_id=ANY($1::uuid[]) ORDER BY is_primary DESC, sort_order, id',
+    [ids]
+  );
+
   return products.map(p => ({
     ...p,
     variants: variants.filter(v => v.product_id === p.id).map(v => ({
@@ -32,6 +37,7 @@ const enrichProducts = async (products) => {
     features: features.filter(f => f.product_id === p.id).map(f => f.feature),
     avg_rating:   parseFloat(ratings.find(r => r.product_id === p.id)?.avg || 0),
     review_count: parseInt(ratings.find(r => r.product_id === p.id)?.cnt || 0),
+    images: images.filter(i => i.product_id === p.id),
   }));
 };
 

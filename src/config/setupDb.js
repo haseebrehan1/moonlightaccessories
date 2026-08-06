@@ -11,7 +11,7 @@ async function main() {
       CREATE TYPE order_status   AS ENUM ('pending','confirmed','processing','shipped','delivered','cancelled','refunded');
       CREATE TYPE payment_status AS ENUM ('pending','paid','failed','refunded','cod_pending');
       CREATE TYPE payment_method AS ENUM ('cod','jazzcash','easypaisa','bank_transfer');
-      CREATE TYPE product_type   AS ENUM ('straight','blowdry');
+      CREATE TYPE product_type   AS ENUM ('straight','blowdry','curls');
     EXCEPTION WHEN duplicate_object THEN null; END $$;
 
     CREATE TABLE IF NOT EXISTS users (
