@@ -1,0 +1,48 @@
+# Moonlight Accessories API — systemd unit
+# Install: /etc/systemd/system/moonlight-api.service
+#
+#   systemctl daemon-reload
+#   systemctl enable --now moonlight-api
+#
+# `enable` is what makes the API survive a reboot. Without it the server can
+# come back up with nothing listening on 5000 and the site is silently down.
+
+[Unit]
+Description=Moonlight Accessories API
+Documentation=https://github.com/haseebrehan1/moonlightaccessories
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=moonlight
+Group=moonlight
+WorkingDirectory=/var/www/moonlight-backend
+
+# dotenv reads .env from WorkingDirectory but never overrides real env vars,
+# so these win over anything stale left in the file.
+Environment=NODE_ENV=production
+Environment=PORT=5000
+
+ExecStart=/usr/bin/node src/server.js
+
+# server.js calls process.exit(1) after 10 failed DB attempts (~30s).
+# Restarting on failure lets it keep retrying if postgres is slow to come up.
+Restart=always
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=moonlight-api
+
+# ── Hardening ─────────────────────────────────────────────
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+# uploads/ must stay writable — multer writes product images to disk.
+ReadWritePaths=/var/www/moonlight-backend/uploads
+
+[Install]
+WantedBy=multi-user.target
