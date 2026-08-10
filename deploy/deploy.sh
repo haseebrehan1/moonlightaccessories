@@ -18,6 +18,14 @@ log() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 
 [[ $EUID -eq 0 ]] || { echo "Run as root."; exit 1; }
 
+# Both checkouts are owned by the service user, so git refuses to touch them as
+# root ("detected dubious ownership") until they are marked safe. Without this
+# every deploy stops on the first fetch below.
+for d in "$APP_DIR" "$WEB_DIR"; do
+    git config --global --get-all safe.directory 2>/dev/null | grep -qxF "$d" || \
+        git config --global --add safe.directory "$d"
+done
+
 log "Pulling latest code"
 git -C "$APP_DIR" fetch --quiet origin
 git -C "$APP_DIR" reset --hard --quiet origin/HEAD

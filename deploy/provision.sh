@@ -51,6 +51,12 @@ fi
 # ── Source ────────────────────────────────────────────────
 log "Fetching source"
 mkdir -p /var/www
+# A re-run fetches into checkouts this script already chowned to $APP_USER,
+# which git as root refuses to touch until they are marked safe.
+for d in "$APP_DIR" "$WEB_DIR"; do
+    git config --global --get-all safe.directory 2>/dev/null | grep -qxF "$d" || \
+        git config --global --add safe.directory "$d"
+done
 for pair in "$BACKEND_REPO|$APP_DIR" "$FRONTEND_REPO|$WEB_DIR"; do
     repo="${pair%%|*}"; dir="${pair##*|}"
     if [[ -d "$dir/.git" ]]; then
