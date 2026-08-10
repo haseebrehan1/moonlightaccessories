@@ -1271,13 +1271,16 @@
 //  CONSTANTS & STATE
 // ═══════════════════════════════════════════════════════════
 const API_BASE = '/api/v1';
-const SHADES = [
-  { key: 'jetblack',  label: 'Jet Black' },
-  { key: 'natural',   label: 'Natural Black' },
-  { key: 'medbrown',  label: 'Medium Brown' },
-  { key: 'darkbrown', label: 'Dark Brown' },
-  { key: 'moka',      label: 'Moka Brown' },
-  { key: 'mahogany',  label: 'Mahogany' },
+// product_variants.shade_key is a foreign key into the shades table, so a key
+// that isn't in that table makes the whole save fail. Loaded from the API at
+// startup; this list is only the fallback for when that call can't be made.
+let SHADES = [
+  { key: 'black',   label: 'Natural Black' },
+  { key: 'choco',   label: 'Choco Brown' },
+  { key: 'hazel',   label: 'Hazel Olive' },
+  { key: 'blackHL', label: 'Black + Gold Highlight' },
+  { key: 'chocoHL', label: 'Choco + Gold Highlight' },
+  { key: 'hazelHL', label: 'Hazel + Gold Highlight' },
 ];
 const STATUSES = ['pending','confirmed','processing','shipped','delivered','cancelled'];
 
@@ -1291,17 +1294,28 @@ let editProductId = null;
 // ═══════════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════════
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('topbar-date').textContent = new Date().toLocaleDateString('en-PK', { weekday:'short', year:'numeric', month:'short', day:'numeric' });
-  buildVariantsGrid();
-  if (token) {
-    showApp();
-    loadDashboard();
-  }
   document.getElementById('login-password').addEventListener('keydown', e => {
     if (e.key === 'Enter') doLogin();
   });
+  await loadShades();
+  buildVariantsGrid();
+  if (token) startSession();
 });
+
+// The shades table is the authority on which shade keys a product may use.
+async function loadShades() {
+  try {
+    const data = await api('GET', '/products/shades');
+    const shades = data.shades || data.data || [];
+    if (shades.length) SHADES = shades.map(s => ({ key: s.key, label: s.name || s.key }));
+  } catch(e) {
+    // Fall back to the hardcoded list — the form still works.
+    console.warn('Could not load shades, using fallback list:', e.message);
+  }
+  SHADE_OPTIONS = buildShadeOptions();
+}
 
 // ═══════════════════════════════════════════════════════════
 //  API HELPER
@@ -1315,6 +1329,13 @@ async function api(method, path, body) {
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(API_BASE + path, opts);
   const data = await res.json().catch(() => ({}));
+  // An expired or invalid token 401s every call. Drop it and go back to the
+  // login screen instead of leaving the panel up failing on each request.
+  // Guarded on `token` so a bad password at login reports normally.
+  if (res.status === 401 && token) {
+    forceLogout(data.message || 'Session expired. Please log in again.');
+    throw new Error(data.message || 'Session expired. Please log in again.');
+  }
   if (!res.ok) throw new Error(data.message || data.error || 'Request failed');
   return data;
 }
@@ -1322,6 +1343,21 @@ async function api(method, path, body) {
 // ═══════════════════════════════════════════════════════════
 //  AUTH
 // ═══════════════════════════════════════════════════════════
+// Check the stored token still works before showing the panel, so a stale one
+// can't leave the dashboard up throwing a token error on every widget.
+async function startSession() {
+  try {
+    await api('GET', '/auth/me');
+  } catch(e) {
+    // api() already sent us back to the login screen if the token was rejected.
+    // Any other failure (server down) isn't the token's fault — carry on and
+    // let the dashboard report the real error.
+    if (!token) return;
+  }
+  showApp();
+  loadDashboard();
+}
+
 async function doLogin() {
   const email = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
@@ -1355,12 +1391,22 @@ function showLoginError(msg) {
   el.style.display = 'block';
 }
 
-function doLogout() {
+function showLogin() {
   token = null;
   localStorage.removeItem('ma_token');
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
+}
+
+function doLogout() {
+  showLogin();
   toast('Logged out successfully', 'success');
+}
+
+// Session ended on the server's terms, not the user's — say why on the form.
+function forceLogout(msg) {
+  showLogin();
+  showLoginError(msg);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1643,9 +1689,10 @@ function renderProducts(products) {
   }
   tbody.innerHTML = products.map(p => {
     const id = p._id || p.id;
-    const variants = p.variants || [];
-    const varCount = Array.isArray(variants) ? variants.length : Object.keys(variants).length;
-    const isActive = p.isActive ?? p.active ?? true;
+    // The list endpoint returns snake_case columns plus a variant_count from
+    // its GROUP BY; it carries no `variants` array and no camelCase aliases.
+    const varCount = Number(p.variant_count ?? (Array.isArray(p.variants) ? p.variants.length : 0));
+    const isActive = p.is_active ?? p.isActive ?? p.active ?? true;
     return `<tr>
       <td><span class="product-thumb">✨</span><strong>${p.name || '—'}</strong>${p.badge ? `<span style="font-size:10px;background:#fff3cd;color:#856404;padding:2px 7px;border-radius:99px;margin-left:6px;">${p.badge}</span>` : ''}</td>
       <td style="text-transform:capitalize">${p.category || '—'}</td>
@@ -1659,6 +1706,7 @@ function renderProducts(products) {
           <button class="btn btn-sm ${isActive?'btn-secondary':'btn-primary'}" onclick="toggleProduct('${id}', ${!isActive})">
             ${isActive ? 'Deactivate' : 'Activate'}
           </button>
+          <button class="btn btn-sm btn-danger" onclick="deleteProduct('${id}')">Delete</button>
         </div>
       </td>
     </tr>`;
@@ -1667,13 +1715,32 @@ function renderProducts(products) {
 
 async function toggleProduct(id, newActive) {
   try {
-    await api('PUT', `/admin/products/${id}`, { isActive: newActive });
+    // The API reads is_active; an isActive key was silently ignored by COALESCE.
+    await api('PUT', `/admin/products/${id}`, { is_active: newActive });
     toast(`Product ${newActive ? 'activated' : 'deactivated'}`, 'success');
     const idx = allProducts.findIndex(p => (p._id||p.id) === id);
-    if (idx > -1) { allProducts[idx].isActive = newActive; allProducts[idx].active = newActive; }
+    if (idx > -1) allProducts[idx].is_active = newActive;
     filterProducts();
   } catch(e) {
     toast('Failed to toggle product: ' + e.message, 'error');
+  }
+}
+
+async function deleteProduct(id) {
+  const p = allProducts.find(x => (x._id||x.id) === id);
+  const name = p?.name || 'this product';
+  if (!confirm(
+    `Delete "${name}" permanently?\n\n` +
+    `Its photos, shades and features are removed with it. Past orders keep ` +
+    `their record. To just hide it from the store instead, use Deactivate.`
+  )) return;
+  try {
+    await api('DELETE', `/admin/products/${id}`);
+    allProducts = allProducts.filter(x => (x._id||x.id) !== id);
+    filterProducts();
+    toast('Product deleted', 'success');
+  } catch(e) {
+    toast('Failed to delete product: ' + e.message, 'error');
   }
 }
 
@@ -1734,15 +1801,12 @@ async function deleteProductImage(imageId) {
   }
 }
 
-const SHADE_OPTIONS = `
-  <option value="">— No shade —</option>
-  <option value="jetblack">Jet Black</option>
-  <option value="natural">Natural Black</option>
-  <option value="medbrown">Medium Brown</option>
-  <option value="darkbrown">Dark Brown</option>
-  <option value="moka">Moka Brown</option>
-  <option value="mahogany">Mahogany</option>
-`;
+let SHADE_OPTIONS = buildShadeOptions();
+
+function buildShadeOptions() {
+  return '<option value="">— No shade —</option>' +
+    SHADES.map(s => `<option value="${s.key}">${s.label}</option>`).join('');
+}
 
 let pendingFiles = [];
 

@@ -2,7 +2,27 @@ const router = require('express').Router();
 const fs     = require('fs');
 const path   = require('path');
 const { protect, restrictTo } = require('../middleware/auth');
-const { query } = require('../config/db');
+const { query, withTransaction } = require('../config/db');
+
+// product_variants.shade_key is a foreign key into shades(key). A key that
+// isn't there is bad input, not a server fault — say so, and say where the
+// real ones live, rather than surfacing a raw constraint error as a 500.
+const isUnknownShade = err => err.code === '23503' && /shade_key/.test(err.constraint || '');
+const unknownShadeMsg = 'Unknown shade. Valid shades come from GET /api/v1/products/shades.';
+const isDuplicateSlug = err => err.code === '23505' && /slug/.test(err.constraint || '');
+
+// product_variants.sku is UNIQUE. Building it from the first 8 characters of
+// the slug made every product that starts the same way ("straight-…") collide
+// on any shade they share, failing the save. products.slug is itself unique,
+// so the whole slug keeps the SKU unique; the column is VARCHAR(80), and on
+// the rare slug long enough to need cutting a short digest of it stands in.
+const digest = s => Math.abs([...s].reduce((h,c) => (h*31 + c.charCodeAt(0))|0, 7)).toString(36).slice(0,4).toUpperCase();
+const skuFor = (slug, shadeKey) => {
+  const base  = slug.replace(/[^a-z0-9]/gi,'').toUpperCase();
+  const shade = shadeKey.toUpperCase();
+  const room  = 76 - shade.length;
+  return `ML-${base.length <= room ? base : base.slice(0, room-4) + digest(slug)}-${shade}`;
+};
 
 router.use(protect, restrictTo('admin','superadmin'));
 
@@ -87,21 +107,29 @@ router.get('/products', async (req, res, next) => {
 router.post('/products', async (req, res, next) => {
   try {
     const { slug,name,description,category,type,badge,price,is_featured,features,variants } = req.body;
-    const { rows } = await query(
-      'INSERT INTO products (slug,name,description,category,type,badge,price,is_featured) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
-      [slug,name,description,category,type,badge,price,is_featured||false]
-    );
-    const pid = rows[0].id;
-    if (features?.length)
-      for (let i=0;i<features.length;i++)
-        await query('INSERT INTO product_features (product_id,feature,sort_order) VALUES ($1,$2,$3)', [pid,features[i],i]);
-    if (variants?.length)
-      for (const v of variants) {
-        const sku = `ML-${slug.replace(/-/g,'').substring(0,8).toUpperCase()}-${v.shade_key.toUpperCase()}`;
-        await query('INSERT INTO product_variants (product_id,shade_key,sku,stock_qty) VALUES ($1,$2,$3,$4)', [pid,v.shade_key,sku,v.stock_qty||100]);
-      }
-    res.status(201).json({ success:true, product:rows[0] });
-  } catch(err) { next(err); }
+    // One transaction for the whole product: a rejected variant used to abort
+    // half way and leave a product row behind with no shades attached.
+    const product = await withTransaction(async (client) => {
+      const { rows } = await client.query(
+        'INSERT INTO products (slug,name,description,category,type,badge,price,is_featured) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
+        [slug,name,description,category,type,badge,price,is_featured||false]
+      );
+      const pid = rows[0].id;
+      if (features?.length)
+        for (let i=0;i<features.length;i++)
+          await client.query('INSERT INTO product_features (product_id,feature,sort_order) VALUES ($1,$2,$3)', [pid,features[i],i]);
+      if (variants?.length)
+        for (const v of variants) {
+          await client.query('INSERT INTO product_variants (product_id,shade_key,sku,stock_qty) VALUES ($1,$2,$3,$4)', [pid,v.shade_key,skuFor(slug,v.shade_key),v.stock_qty||100]);
+        }
+      return rows[0];
+    });
+    res.status(201).json({ success:true, product });
+  } catch(err) {
+    if (isUnknownShade(err)) return res.status(400).json({ success:false, message:unknownShadeMsg });
+    if (isDuplicateSlug(err)) return res.status(409).json({ success:false, message:'A product with that slug already exists.' });
+    next(err);
+  }
 });
 
 router.get('/products/:id', async (req, res, next) => {
@@ -124,46 +152,56 @@ router.get('/products/:id', async (req, res, next) => {
 router.put('/products/:id', async (req, res, next) => {
   try {
     const { name,slug,description,category,type,badge,price,compare_price,is_featured,is_active,features,variants,isFeatured } = req.body;
-    const { rows } = await query(
-      `UPDATE products SET
-        name=COALESCE($1,name), slug=COALESCE($2,slug), description=COALESCE($3,description),
-        category=COALESCE($4,category), type=COALESCE($5,type), badge=COALESCE($6,badge),
-        price=COALESCE($7,price), compare_price=COALESCE($8,compare_price),
-        is_featured=COALESCE($9,is_featured), is_active=COALESCE($10,is_active)
-       WHERE id=$11 RETURNING *`,
-      [name,slug,description,category,type,badge,price,compare_price,
-       (is_featured!==undefined?is_featured:isFeatured),is_active,req.params.id]
-    );
-    if (!rows.length) return res.status(404).json({ success:false, message:'Not found.' });
-    const pid = req.params.id;
-    if (features !== undefined) {
-      await query('DELETE FROM product_features WHERE product_id=$1', [pid]);
-      for (let i=0;i<features.length;i++)
-        await query('INSERT INTO product_features (product_id,feature,sort_order) VALUES ($1,$2,$3)', [pid,features[i],i]);
-    }
-    if (variants !== undefined) {
-      const newKeys = variants.map(v=>v.shade_key);
-      if (newKeys.length) await query(
-        `DELETE FROM product_variants WHERE product_id=$1 AND shade_key != ALL($2::text[])`,
-        [pid, newKeys]
+    // Transactional for the same reason as create, and more so here: the
+    // rewrite deletes the old features and variants first, so a failure part
+    // way through would otherwise strip a live product of both.
+    const product = await withTransaction(async (client) => {
+      const { rows } = await client.query(
+        `UPDATE products SET
+          name=COALESCE($1,name), slug=COALESCE($2,slug), description=COALESCE($3,description),
+          category=COALESCE($4,category), type=COALESCE($5,type), badge=COALESCE($6,badge),
+          price=COALESCE($7,price), compare_price=COALESCE($8,compare_price),
+          is_featured=COALESCE($9,is_featured), is_active=COALESCE($10,is_active)
+         WHERE id=$11 RETURNING *`,
+        [name,slug,description,category,type,badge,price,compare_price,
+         (is_featured!==undefined?is_featured:isFeatured),is_active,req.params.id]
       );
-      else await query('DELETE FROM product_variants WHERE product_id=$1', [pid]);
-      for (const v of variants) {
-        const { rows:existing } = await query(
-          'SELECT id FROM product_variants WHERE product_id=$1 AND shade_key=$2',
-          [pid, v.shade_key]
+      if (!rows.length) return null;
+      const pid = req.params.id;
+      if (features !== undefined) {
+        await client.query('DELETE FROM product_features WHERE product_id=$1', [pid]);
+        for (let i=0;i<features.length;i++)
+          await client.query('INSERT INTO product_features (product_id,feature,sort_order) VALUES ($1,$2,$3)', [pid,features[i],i]);
+      }
+      if (variants !== undefined) {
+        const newKeys = variants.map(v=>v.shade_key);
+        if (newKeys.length) await client.query(
+          `DELETE FROM product_variants WHERE product_id=$1 AND shade_key != ALL($2::text[])`,
+          [pid, newKeys]
         );
-        if (existing.length) {
-          await query('UPDATE product_variants SET stock_qty=$1 WHERE id=$2', [v.stock_qty||0, existing[0].id]);
-        } else {
-          const sku = `ML-${rows[0].slug.replace(/-/g,'').substring(0,8).toUpperCase()}-${v.shade_key.toUpperCase()}`;
-          await query('INSERT INTO product_variants (product_id,shade_key,sku,stock_qty) VALUES ($1,$2,$3,$4)',
-            [pid,v.shade_key,sku,v.stock_qty||0]);
+        else await client.query('DELETE FROM product_variants WHERE product_id=$1', [pid]);
+        for (const v of variants) {
+          const { rows:existing } = await client.query(
+            'SELECT id FROM product_variants WHERE product_id=$1 AND shade_key=$2',
+            [pid, v.shade_key]
+          );
+          if (existing.length) {
+            await client.query('UPDATE product_variants SET stock_qty=$1 WHERE id=$2', [v.stock_qty||0, existing[0].id]);
+          } else {
+            await client.query('INSERT INTO product_variants (product_id,shade_key,sku,stock_qty) VALUES ($1,$2,$3,$4)',
+              [pid,v.shade_key,skuFor(rows[0].slug,v.shade_key),v.stock_qty||0]);
+          }
         }
       }
-    }
-    res.json({ success:true, product:rows[0] });
-  } catch(err) { next(err); }
+      return rows[0];
+    });
+    if (!product) return res.status(404).json({ success:false, message:'Not found.' });
+    res.json({ success:true, product });
+  } catch(err) {
+    if (isUnknownShade(err)) return res.status(400).json({ success:false, message:unknownShadeMsg });
+    if (isDuplicateSlug(err)) return res.status(409).json({ success:false, message:'A product with that slug already exists.' });
+    next(err);
+  }
 });
 
 router.get('/products/:id/images', async (req, res, next) => {
@@ -194,10 +232,21 @@ router.put('/variants/:id/stock', async (req, res, next) => {
   } catch(err) { next(err); }
 });
 
+// Removes the product for good. Features, variants, images and reviews go with
+// it via ON DELETE CASCADE; order_items keep their own name/price snapshot and
+// only lose product_id (ON DELETE SET NULL), so order history stays intact.
+// To hide a product from the store without losing it, PUT is_active:false.
 router.delete('/products/:id', async (req, res, next) => {
   try {
-    await query('UPDATE products SET is_active=false WHERE id=$1', [req.params.id]);
-    res.json({ success:true, message:'Product deactivated.' });
+    const { rows:images } = await query('SELECT url FROM product_images WHERE product_id=$1', [req.params.id]);
+    const { rows } = await query('DELETE FROM products WHERE id=$1 RETURNING id', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ success:false, message:'Not found.' });
+    // Only after the row is gone, so a failed delete never orphans the files.
+    for (const img of images) {
+      const filePath = path.join(__dirname, '../../', img.url);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+    res.json({ success:true, message:'Product deleted.' });
   } catch(err) { next(err); }
 });
 

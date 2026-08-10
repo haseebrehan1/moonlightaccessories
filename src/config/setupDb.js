@@ -6,13 +6,14 @@ async function main() {
   await pool.query(`
     CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-    DO $$ BEGIN
-      CREATE TYPE user_role      AS ENUM ('customer','admin','superadmin');
-      CREATE TYPE order_status   AS ENUM ('pending','confirmed','processing','shipped','delivered','cancelled','refunded');
-      CREATE TYPE payment_status AS ENUM ('pending','paid','failed','refunded','cod_pending');
-      CREATE TYPE payment_method AS ENUM ('cod','jazzcash','easypaisa','bank_transfer');
-      CREATE TYPE product_type   AS ENUM ('straight','blowdry','curls');
-    EXCEPTION WHEN duplicate_object THEN null; END $$;
+    -- One block per type. Sharing a block means the first type that already
+    -- exists raises duplicate_object and aborts the rest, so on any database
+    -- created earlier every type below it would silently never be created.
+    DO $$ BEGIN CREATE TYPE user_role      AS ENUM ('customer','admin','superadmin'); EXCEPTION WHEN duplicate_object THEN null; END $$;
+    DO $$ BEGIN CREATE TYPE order_status   AS ENUM ('pending','confirmed','processing','shipped','delivered','cancelled','refunded'); EXCEPTION WHEN duplicate_object THEN null; END $$;
+    DO $$ BEGIN CREATE TYPE payment_status AS ENUM ('pending','paid','failed','refunded','cod_pending'); EXCEPTION WHEN duplicate_object THEN null; END $$;
+    DO $$ BEGIN CREATE TYPE payment_method AS ENUM ('cod','jazzcash','easypaisa','bank_transfer'); EXCEPTION WHEN duplicate_object THEN null; END $$;
+    DO $$ BEGIN CREATE TYPE product_type   AS ENUM ('straight','blowdry','curls'); EXCEPTION WHEN duplicate_object THEN null; END $$;
 
     CREATE TABLE IF NOT EXISTS users (
       id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -177,6 +178,13 @@ async function main() {
 
     CREATE SEQUENCE IF NOT EXISTS order_seq START 1000;
   `);
+
+  // Enum values added after the type's CREATE TYPE first ran — those databases
+  // only get them here. Each ALTER must be its own query: Postgres treats the
+  // multi-statement string above as one implicit transaction, and ADD VALUE
+  // cannot be used by a later statement in the transaction that added it.
+  await pool.query(`ALTER TYPE product_type ADD VALUE IF NOT EXISTS 'curls'`);
+
   console.log('✅ Schema created!\n');
 }
 
