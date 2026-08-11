@@ -2,13 +2,15 @@ require('dotenv').config({ path: require('path').join(__dirname, '../../.env') }
 const { pool } = require('./db');
 const bcrypt = require('bcryptjs');
 
+// The shades a product may be sold in. This table is the single source of
+// truth: product_variants.shade_key is a foreign key into it, and both the
+// storefront and the admin panel read it from GET /products/shades.
 const SHADES = [
-  { key:'black',   name:'Natural Black',         color_hex:'#1c1208', is_highlight:false, sort_order:1 },
-  { key:'choco',   name:'Choco Brown',            color_hex:'#5c2e10', is_highlight:false, sort_order:2 },
-  { key:'hazel',   name:'Hazel Olive',            color_hex:'#9b7535', is_highlight:false, sort_order:3 },
-  { key:'blackHL', name:'Black + Gold Highlight', color_hex:'#1c1208', is_highlight:true,  sort_order:4 },
-  { key:'chocoHL', name:'Choco + Gold Highlight', color_hex:'#5c2e10', is_highlight:true,  sort_order:5 },
-  { key:'hazelHL', name:'Hazel + Gold Highlight', color_hex:'#9b7535', is_highlight:true,  sort_order:6 },
+  { key:'jetblack',   name:'Jet Black',    color_hex:'#0a0a0a', is_highlight:false, sort_order:1 },
+  { key:'mokka',      name:'Mokka Brown',  color_hex:'#4e2a14', is_highlight:false, sort_order:2 },
+  { key:'darkbrown',  name:'Dark Brown',   color_hex:'#3a1c08', is_highlight:false, sort_order:3 },
+  { key:'lightbrown', name:'Light Brown',  color_hex:'#7a4020', is_highlight:false, sort_order:4 },
+  { key:'mahogany',   name:'Mahogany',     color_hex:'#6e1e14', is_highlight:false, sort_order:5 },
 ];
 
 const PRODUCTS = [
@@ -16,42 +18,42 @@ const PRODUCTS = [
     price:3374, is_featured:false,
     desc:'Premium synthetic straight hair extension set of 3 pieces. Blends naturally for added volume and length.',
     features:['3-piece clip-in set','Straight texture','Heat-resistant synthetic fiber','Secure claw clip attachment'],
-    variants:[{sk:'black',stock:50},{sk:'choco',stock:45},{sk:'hazel',stock:40},{sk:'blackHL',stock:35},{sk:'chocoHL',stock:30},{sk:'hazelHL',stock:0}] },
+    variants:[{sk:'jetblack',stock:50},{sk:'mokka',stock:45},{sk:'lightbrown',stock:40},{sk:'darkbrown',stock:35},{sk:'mahogany',stock:30}] },
   { slug:'straight-03-hazel', name:'Straight 03-Piece', badge:null, category:'straight', type:'straight',
     price:3374, is_featured:false,
     desc:'Warm hazel olive tone straight extensions for a sun-kissed dimensional look.',
     features:['3-piece clip-in set','Hazel Olive shade','Natural sheen finish','Easy to apply'],
-    variants:[{sk:'hazel',stock:40},{sk:'hazelHL',stock:30},{sk:'black',stock:50},{sk:'choco',stock:45}] },
+    variants:[{sk:'lightbrown',stock:40},{sk:'mahogany',stock:30},{sk:'jetblack',stock:50},{sk:'mokka',stock:45}] },
   { slug:'blowdry-black', name:'Synthetic Blow Dry', badge:'New', category:'blowdry', type:'blowdry',
     price:4499, is_featured:false,
     desc:'Voluminous blow-dry style extension for instant glamour. Adds massive body to any look.',
     features:['Blow-dry voluminous style','Full body & bounce','Silky synthetic fiber','Clip-in attachment'],
-    variants:[{sk:'black',stock:30},{sk:'hazel',stock:25},{sk:'hazelHL',stock:20},{sk:'choco',stock:22}] },
+    variants:[{sk:'jetblack',stock:30},{sk:'lightbrown',stock:25},{sk:'mahogany',stock:20},{sk:'mokka',stock:22}] },
   { slug:'blowdry-hazel', name:'Synthetic Blow Dry', badge:null, category:'blowdry', type:'blowdry',
     price:4499, is_featured:false,
     desc:'Hazel blow-dry extensions with beautiful bouncy volume and warm tones.',
     features:['Blow-dry style','Hazel Olive shade','Bouncy full volume','Soft silky texture'],
-    variants:[{sk:'hazel',stock:25},{sk:'hazelHL',stock:20},{sk:'black',stock:30}] },
+    variants:[{sk:'lightbrown',stock:25},{sk:'mahogany',stock:20},{sk:'jetblack',stock:30}] },
   { slug:'blowdry-hazel-hl', name:'Synthetic Blow Dry', badge:'New', category:'blowdry', type:'blowdry',
     price:4499, is_featured:true,
     desc:'Hazel with olive gold highlights — multi-tonal blow-dry style for a dimensional, glamorous finish.',
     features:['Blow-dry voluminous style','Hazel + Gold highlights','Multi-tonal dimension','Premium finish'],
-    variants:[{sk:'hazelHL',stock:20},{sk:'hazel',stock:25},{sk:'chocoHL',stock:18}] },
+    variants:[{sk:'mahogany',stock:20},{sk:'lightbrown',stock:25},{sk:'darkbrown',stock:18}] },
   { slug:'straight-full-set', name:'Straight Full Set', badge:'Premium', category:'straight', type:'straight',
     price:6637, is_featured:true,
     desc:'Our premium full straight extension collection with ombre finish — salon quality at home.',
     features:['Complete full extension set','Multiple shades available','Ombre gradient finish','Salon-quality synthetic fiber'],
-    variants:[{sk:'choco',stock:20},{sk:'chocoHL',stock:18},{sk:'hazel',stock:15},{sk:'hazelHL',stock:14},{sk:'black',stock:22}] },
+    variants:[{sk:'mokka',stock:20},{sk:'mahogany',stock:18},{sk:'lightbrown',stock:15},{sk:'darkbrown',stock:14},{sk:'jetblack',stock:22}] },
   { slug:'straight-choco-hl', name:'Straight 03-Piece', badge:null, category:'straight', type:'straight',
     price:3374, is_featured:true,
     desc:'Choco brown with olive gold highlight streaks — a warm luxurious combination for bold styling.',
     features:['3-piece clip-in set','Choco + Gold highlights','Straight texture','Soft premium fiber'],
-    variants:[{sk:'chocoHL',stock:30},{sk:'choco',stock:40},{sk:'blackHL',stock:25}] },
+    variants:[{sk:'mahogany',stock:30},{sk:'mokka',stock:40},{sk:'darkbrown',stock:25}] },
   { slug:'straight-black-hl', name:'Straight 03-Piece', badge:null, category:'straight', type:'straight',
     price:3374, is_featured:false,
     desc:'Classic black base with subtle olive gold highlight panels for a chic modern contrast look.',
     features:['3-piece clip-in set','Black + Olive Gold highlights','Straight texture','Heat-resistant fiber'],
-    variants:[{sk:'blackHL',stock:25},{sk:'black',stock:50},{sk:'hazelHL',stock:20}] },
+    variants:[{sk:'darkbrown',stock:25},{sk:'jetblack',stock:50},{sk:'mahogany',stock:20}] },
 ];
 
 async function seed() {
@@ -64,23 +66,32 @@ async function seed() {
   }
   console.log('  ✓ Shades');
 
-  for (const p of PRODUCTS) {
-    const { rows } = await pool.query(
-      'INSERT INTO products (slug,name,description,category,type,badge,price,is_featured) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (slug) DO UPDATE SET price=$7,is_featured=$8 RETURNING id',
-      [p.slug, p.name, p.desc, p.category, p.type, p.badge, p.price, p.is_featured]
-    );
-    const pid = rows[0].id;
-    await pool.query('DELETE FROM product_features WHERE product_id=$1', [pid]);
-    for (let i=0; i<p.features.length; i++)
-      await pool.query('INSERT INTO product_features (product_id,feature,sort_order) VALUES ($1,$2,$3)', [pid, p.features[i], i]);
-    for (const v of p.variants) {
-      const sku = `ML-${p.slug.replace(/-/g,'').toUpperCase()}-${v.sk.toUpperCase()}`;
-      await pool.query(
-        'INSERT INTO product_variants (product_id,shade_key,sku,stock_qty) VALUES ($1,$2,$3,$4) ON CONFLICT (product_id,shade_key) DO UPDATE SET stock_qty=$4',
-        [pid, v.sk, sku, v.stock]
+  // Sample catalogue, for a brand new database only. This runs on every boot
+  // in production, so re-applying it would undo the shop's own work: deleted
+  // products would reappear, and prices and stock edited in the admin panel
+  // would be reset to these values at the next restart.
+  const { rows:[{ count }] } = await pool.query('SELECT count(*)::int FROM products');
+  if (count > 0) {
+    console.log(`  · Catalogue already has ${count} products — leaving it alone`);
+  } else {
+    for (const p of PRODUCTS) {
+      const { rows } = await pool.query(
+        'INSERT INTO products (slug,name,description,category,type,badge,price,is_featured) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (slug) DO UPDATE SET price=$7,is_featured=$8 RETURNING id',
+        [p.slug, p.name, p.desc, p.category, p.type, p.badge, p.price, p.is_featured]
       );
+      const pid = rows[0].id;
+      await pool.query('DELETE FROM product_features WHERE product_id=$1', [pid]);
+      for (let i=0; i<p.features.length; i++)
+        await pool.query('INSERT INTO product_features (product_id,feature,sort_order) VALUES ($1,$2,$3)', [pid, p.features[i], i]);
+      for (const v of p.variants) {
+        const sku = `ML-${p.slug.replace(/-/g,'').toUpperCase()}-${v.sk.toUpperCase()}`;
+        await pool.query(
+          'INSERT INTO product_variants (product_id,shade_key,sku,stock_qty) VALUES ($1,$2,$3,$4) ON CONFLICT (product_id,shade_key) DO UPDATE SET stock_qty=$4',
+          [pid, v.sk, sku, v.stock]
+        );
+      }
+      console.log(`  ✓ Product: ${p.name} [${p.slug}]`);
     }
-    console.log(`  ✓ Product: ${p.name} [${p.slug}]`);
   }
 
   const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'Admin@123', 12);
