@@ -743,6 +743,11 @@
       border-radius: 5px;
       background: #fff;
     }
+    .shade-hint {
+      font-size: 9.5px;
+      line-height: 1.35;
+      color: var(--text-muted);
+    }
     .img-pending-meta label {
       font-size: 11px;
       display: flex;
@@ -1775,7 +1780,7 @@ async function loadProductImages(productId) {
         <img src="${API_BASE.replace('/api/v1','')}${img.url}" alt="${img.alt_text||''}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22><rect fill=%22%23eee%22 width=%22100%25%22 height=%22100%25%22/><text x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22%23999%22>?</text></svg>'" />
         <button class="img-delete-btn" onclick="deleteProductImage(${img.id})">✕</button>
         <div class="img-card-info">
-          <span>${img.shade_key || 'General'}</span>
+          <span>${img.shade_key ? (SHADES.find(s => s.key === img.shade_key) || {}).label || img.shade_key : '★ All shades'}</span>
           ${img.is_primary ? '<span class="img-primary-badge">Primary</span>' : ''}
         </div>
       </div>
@@ -1803,7 +1808,9 @@ async function deleteProductImage(imageId) {
 let SHADE_OPTIONS = buildShadeOptions();
 
 function buildShadeOptions() {
-  return '<option value="">— No shade —</option>' +
+  // No shade_key means the picture belongs to every shade, which is how the
+  // storefront treats it — so say that, rather than "no shade".
+  return '<option value="">★ All shades</option>' +
     SHADES.map(s => `<option value="${s.key}">${s.label}</option>`).join('');
 }
 
@@ -1825,6 +1832,18 @@ function handleFileSelection() {
   buildPendingGrid(files);
 }
 
+// Spells out what the shade dropdown will actually do, since "All shades" and
+// a single shade behave quite differently on the storefront.
+function updateShadeHint(i) {
+  const key = document.getElementById(`pending-shade-${i}`).value;
+  const hint = document.getElementById(`pending-hint-${i}`);
+  if (!hint) return;
+  const label = (SHADES.find(s => s.key === key) || {}).label || key;
+  hint.textContent = key
+    ? `Shows only when ${label} is selected`
+    : 'Shows on every shade of this product';
+}
+
 function buildPendingGrid(files) {
   pendingFiles = files;
   const grid = document.getElementById('img-pending-grid');
@@ -1833,7 +1852,8 @@ function buildPendingGrid(files) {
       <img src="${URL.createObjectURL(f)}" alt="${f.name}" />
       <div class="img-pending-meta">
         <div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${f.name}">${f.name}</div>
-        <select id="pending-shade-${i}">${SHADE_OPTIONS}</select>
+        <select id="pending-shade-${i}" onchange="updateShadeHint(${i})">${SHADE_OPTIONS}</select>
+        <div class="shade-hint" id="pending-hint-${i}">Shows on every shade of this product</div>
         <label>
           <input type="checkbox" id="pending-primary-${i}" />
           Set as Primary
