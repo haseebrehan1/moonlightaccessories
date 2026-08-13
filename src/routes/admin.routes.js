@@ -57,6 +57,34 @@ router.get('/dashboard', async (req, res, next) => {
   } catch(err) { next(err); }
 });
 
+// Live visitors. "Active now" means seen within the last 5 minutes, which
+// covers a browser that has gone a minute without sending its heartbeat.
+// Days are counted in Pakistan time, not the server's UTC.
+router.get('/live', async (req, res, next) => {
+  try {
+    const [now, today, pages] = await Promise.all([
+      query("SELECT COUNT(*)::int AS n FROM visitors WHERE last_seen > NOW() - INTERVAL '5 minutes'"),
+      query(`SELECT COUNT(*)::int AS visitors, COALESCE(SUM(page_views),0)::int AS views
+             FROM visitors
+             WHERE first_seen >= date_trunc('day', NOW() AT TIME ZONE 'Asia/Karachi') AT TIME ZONE 'Asia/Karachi'`),
+      query(`SELECT COALESCE(NULLIF(page_title,''), path) AS page, COUNT(*)::int AS n
+             FROM visitors WHERE last_seen > NOW() - INTERVAL '5 minutes'
+             GROUP BY 1 ORDER BY n DESC LIMIT 6`),
+    ]);
+
+    // Housekeeping while we are here: sessions older than 30 days are of no
+    // use and the table would otherwise grow forever.
+    query("DELETE FROM visitors WHERE last_seen < NOW() - INTERVAL '30 days'").catch(() => {});
+
+    res.json({
+      success: true,
+      active_now: now.rows[0].n,
+      today: { visitors: today.rows[0].visitors, page_views: today.rows[0].views },
+      viewing: pages.rows,
+    });
+  } catch(err) { next(err); }
+});
+
 // Orders
 router.get('/orders', async (req, res, next) => {
   try {

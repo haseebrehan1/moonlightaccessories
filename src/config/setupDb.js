@@ -176,6 +176,21 @@ async function main() {
       END LOOP;
     END $trg$;
 
+    -- One row per browsing session, updated as the visitor moves around, so
+    -- "who is on the site right now" is a single indexed count rather than a
+    -- scan over a growing log of every page view.
+    CREATE TABLE IF NOT EXISTS visitors (
+      session_id  VARCHAR(40) PRIMARY KEY,
+      first_seen  TIMESTAMPTZ DEFAULT NOW(),
+      last_seen   TIMESTAMPTZ DEFAULT NOW(),
+      path        VARCHAR(300),
+      page_title  VARCHAR(200),
+      referrer    VARCHAR(400),
+      page_views  INT DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_visitors_last_seen  ON visitors(last_seen DESC);
+    CREATE INDEX IF NOT EXISTS idx_visitors_first_seen ON visitors(first_seen DESC);
+
     CREATE SEQUENCE IF NOT EXISTS order_seq START 1000;
   `);
 

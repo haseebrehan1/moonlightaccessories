@@ -39,6 +39,16 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Static uploads
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
+// Visitor heartbeat, mounted before the global limiter on purpose. Mobile
+// carriers put many customers behind one IP, so letting a once-a-minute ping
+// eat into the shared 200-request budget could lock real shoppers out of the
+// shop. It gets its own generous allowance instead.
+app.use('/api/v1/track', rateLimit({
+  windowMs: 60 * 1000, max: 120,
+  standardHeaders: false, legacyHeaders: false,
+  handler: (req, res) => res.status(204).end(),
+}), require('./routes/track.routes'));
+
 // Global rate limit
 app.use('/api/', rateLimit({
   windowMs: 15 * 60 * 1000, max: 200,

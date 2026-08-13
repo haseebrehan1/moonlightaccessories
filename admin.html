@@ -239,6 +239,14 @@
     }
     .nav-item:hover { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.85); }
     .nav-item.active { background: var(--accent); color: var(--white); }
+    .live-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+    }
+    .live-row:last-child { border-bottom: none; }
+    .live-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .live-row strong { color: #16a34a; }
+    .live-empty { font-size: 13px; color: var(--text-muted); padding: 14px 0; }
     .cell-sub {
       font-size: 10.5px;
       color: var(--text-muted);
@@ -385,6 +393,26 @@
     .stat-icon.blue { background: rgba(59,130,246,0.10); }
     .stat-icon.green { background: rgba(16,185,129,0.10); }
     .stat-icon.purple { background: rgba(139,92,246,0.10); }
+    /* Live visitors — the pulse makes it read as a number that is moving,
+       not a total that was calculated once when the page loaded. */
+    .stat-card.live::before { background: #16a34a; }
+    .stat-icon.live { background: rgba(22,163,74,0.10); }
+    .live-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #16a34a; display: inline-block;
+      box-shadow: 0 0 0 0 rgba(22,163,74,0.55);
+      animation: livePulse 1.8s infinite;
+    }
+    @keyframes livePulse {
+      70%  { box-shadow: 0 0 0 11px rgba(22,163,74,0); }
+      100% { box-shadow: 0 0 0 0 rgba(22,163,74,0); }
+    }
+    .live-tag {
+      font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+      color: #16a34a; font-weight: 700; margin-left: 4px;
+    }
+    .stat-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+    @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
     .stat-label { font-size: 12px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
     .stat-value { font-size: 28px; font-weight: 700; color: var(--text); line-height: 1; }
     .stat-sub { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
@@ -1004,6 +1032,12 @@
             <div class="stat-card blue"><div class="stat-icon blue">📦</div><div class="stat-label">Total Orders</div><div class="stat-value" id="stat-orders">—</div></div>
             <div class="stat-card green"><div class="stat-icon green">✨</div><div class="stat-label">Products</div><div class="stat-value" id="stat-products">—</div></div>
             <div class="stat-card purple"><div class="stat-icon purple">👥</div><div class="stat-label">Customers</div><div class="stat-value" id="stat-customers">—</div></div>
+            <div class="stat-card live">
+              <div class="stat-icon live"><span class="live-dot"></span></div>
+              <div class="stat-label">Live Visitors <span class="live-tag">now</span></div>
+              <div class="stat-value" id="stat-live">—</div>
+              <div class="stat-sub" id="stat-live-today">&nbsp;</div>
+            </div>
           </div>
 
           <div class="two-col-grid">
@@ -1022,6 +1056,18 @@
                     <tr class="loading-row"><td colspan="6"><span class="spinner"></span>Loading...</td></tr>
                   </tbody>
                 </table>
+              </div>
+            </div>
+
+            <div class="table-card">
+              <div class="table-header">
+                <div>
+                  <div class="table-title"><span class="live-dot"></span> &nbsp;On the Site Now</div>
+                  <div class="table-subtitle">What visitors are looking at, updated every 20 seconds</div>
+                </div>
+              </div>
+              <div id="live-viewing" style="padding:6px 20px 18px">
+                <div class="live-empty">Loading…</div>
               </div>
             </div>
 
@@ -1483,6 +1529,7 @@ async function startSession() {
   }
   showApp();
   loadDashboard();
+  startLivePolling();
 }
 
 async function doLogin() {
@@ -1504,6 +1551,7 @@ async function doLogin() {
     localStorage.setItem('ma_token', token);
     showApp();
     loadDashboard();
+    startLivePolling();
   } catch(e) {
     showLoginError(e.message || 'Invalid credentials. Please try again.');
   } finally {
@@ -1520,6 +1568,7 @@ function showLoginError(msg) {
 
 function showLogin() {
   token = null;
+  stopLivePolling();
   localStorage.removeItem('ma_token');
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
@@ -1556,6 +1605,48 @@ function navigateTo(page) {
   else if (page === 'products') loadProducts();
   else if (page === 'customers') loadCustomers();
   else if (page === 'reviews') loadReviews();
+
+  if (page === 'dashboard') startLivePolling(); else stopLivePolling();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LIVE VISITORS
+// ═══════════════════════════════════════════════════════════
+let liveTimer = null;
+
+async function refreshLive() {
+  try {
+    const d = await api('GET', '/admin/live');
+    const el = document.getElementById('stat-live');
+    if (el) el.textContent = d.active_now;
+
+    const sub = document.getElementById('stat-live-today');
+    if (sub) sub.textContent = `${d.today.visitors} today · ${d.today.page_views} page views`;
+
+    // What the people currently on the site are looking at.
+    const box = document.getElementById('live-viewing');
+    if (box) {
+      box.innerHTML = d.active_now === 0
+        ? `<div class="live-empty">Nobody on the site right now</div>`
+        : d.viewing.map(v =>
+            `<div class="live-row"><span>${escapeHtml(v.page || '—')}</span><strong>${v.n}</strong></div>`).join('');
+    }
+  } catch(e) { /* a failed poll should never disturb the panel */ }
+}
+
+// Polls only while the Dashboard is open and this tab is in front, so an
+// admin panel left open in a background tab is not calling the server all day.
+function startLivePolling() {
+  stopLivePolling();
+  refreshLive();
+  liveTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') refreshLive();
+  }, 20000);
+}
+
+function stopLivePolling() {
+  if (liveTimer) clearInterval(liveTimer);
+  liveTimer = null;
 }
 
 // ═══════════════════════════════════════════════════════════
