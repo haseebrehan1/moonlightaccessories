@@ -743,6 +743,13 @@
       border-radius: 5px;
       background: #fff;
     }
+    .fld-note {
+      display: block;
+      margin-top: 4px;
+      font-size: 10.5px;
+      line-height: 1.4;
+      color: var(--text-muted);
+    }
     .shade-hint {
       font-size: 9.5px;
       line-height: 1.35;
@@ -1209,8 +1216,14 @@
           <input type="text" id="p-badge" placeholder="e.g. Best Seller, New" />
         </div>
         <div class="form-group">
-          <label>Price (PKR) *</label>
-          <input type="number" id="p-price" placeholder="0" min="0" />
+          <label>Selling Price (PKR) *</label>
+          <input type="number" id="p-price" placeholder="0" min="0" oninput="updateDiscountHint()" />
+          <small class="fld-note">What the customer actually pays</small>
+        </div>
+        <div class="form-group">
+          <label>Original Price (PKR)</label>
+          <input type="number" id="p-compare" placeholder="Leave empty for no discount" min="0" oninput="updateDiscountHint()" />
+          <small class="fld-note" id="discount-hint">Shown crossed out beside the selling price</small>
         </div>
         <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:4px;">
           <label class="form-check">
@@ -1700,7 +1713,14 @@ function renderProducts(products) {
     return `<tr>
       <td><span class="product-thumb">✨</span><strong>${p.name || '—'}</strong>${p.badge ? `<span style="font-size:10px;background:#fff3cd;color:#856404;padding:2px 7px;border-radius:99px;margin-left:6px;">${p.badge}</span>` : ''}</td>
       <td style="text-transform:capitalize">${p.category || '—'}</td>
-      <td><strong>${fmtCurrency(p.price)}</strong></td>
+      <td>
+        <strong>${fmtCurrency(p.price)}</strong>
+        ${discountPct(p.price, p.compare_price) ? `
+          <div style="font-size:11px;margin-top:2px">
+            <s style="color:var(--text-muted)">${fmtCurrency(p.compare_price)}</s>
+            <span style="color:#16a34a;font-weight:700;margin-left:4px">${discountPct(p.price, p.compare_price)}% off</span>
+          </div>` : ''}
+      </td>
       <td>${varCount} shade${varCount!==1?'s':''}</td>
       <td>${p.isFeatured||p.is_featured ? '<span class="badge badge-active">⭐ Yes</span>' : '<span class="badge badge-inactive">No</span>'}</td>
       <td>${isActive ? '<span class="badge badge-active">Active</span>' : '<span class="badge badge-inactive">Inactive</span>'}</td>
@@ -1947,6 +1967,32 @@ function buildVariantsGrid() {
   });
 }
 
+// Percentage off, or null when there is no genuine discount. The same formula
+// runs on the storefront, so the two can never disagree.
+function discountPct(price, comparePrice) {
+  const p = parseFloat(price), c = parseFloat(comparePrice);
+  if (!c || !p || c <= p) return null;
+  return Math.round((c - p) / c * 100);
+}
+
+function updateDiscountHint() {
+  const hint = document.getElementById('discount-hint');
+  if (!hint) return;
+  const price = parseFloat(document.getElementById('p-price').value);
+  const cmp   = parseFloat(document.getElementById('p-compare').value);
+  const pct   = discountPct(price, cmp);
+  if (pct) {
+    hint.textContent = `Customers see ${pct}% OFF — Rs. ${cmp.toLocaleString()} crossed out, Rs. ${price.toLocaleString()} to pay`;
+    hint.style.color = 'var(--success, #16a34a)';
+  } else if (document.getElementById('p-compare').value.trim() && price) {
+    hint.textContent = 'Must be higher than the selling price to show a discount';
+    hint.style.color = 'var(--danger)';
+  } else {
+    hint.textContent = 'Shown crossed out beside the selling price';
+    hint.style.color = '';
+  }
+}
+
 function openProductModal() {
   editProductId = null;
   document.getElementById('product-modal-title').textContent = 'Add New Product';
@@ -1955,6 +2001,8 @@ function openProductModal() {
   document.getElementById('p-category').value = '';
   document.getElementById('p-type').value = '';
   document.getElementById('p-price').value = '';
+  document.getElementById('p-compare').value = '';
+  updateDiscountHint();
   document.getElementById('p-featured').checked = false;
   SHADES.forEach(s => {
     document.getElementById(`var-${s.key}`).checked = false;
@@ -1989,6 +2037,8 @@ async function openEditProduct(id) {
     document.getElementById('p-category').value = p.category || '';
     document.getElementById('p-type').value = p.type || '';
     document.getElementById('p-price').value = p.price || '';
+    document.getElementById('p-compare').value = p.compare_price || '';
+    updateDiscountHint();
     document.getElementById('p-badge').value = p.badge || '';
     document.getElementById('p-featured').checked = !!(p.isFeatured || p.is_featured);
     document.getElementById('p-features').value = (p.features || []).join(', ');
@@ -2023,9 +2073,15 @@ async function submitProduct() {
   const category = document.getElementById('p-category').value;
   const type     = document.getElementById('p-type').value;
   const price    = parseFloat(document.getElementById('p-price').value);
+  const compareRaw = document.getElementById('p-compare').value.trim();
+  const compare_price = compareRaw === '' ? null : parseFloat(compareRaw);
 
   if (!name || !slug || !description || !category || !type || !price) {
     toast('Please fill all required fields (Name, Slug, Description, Category, Type, Price)', 'warning');
+    return;
+  }
+  if (compare_price !== null && compare_price <= price) {
+    toast('Original price must be higher than the selling price, or leave it empty', 'warning');
     return;
   }
 
@@ -2039,7 +2095,7 @@ async function submitProduct() {
   const features = document.getElementById('p-features').value.split(',').map(f => f.trim()).filter(Boolean);
 
   const payload = {
-    name, slug, description, category, type, price,
+    name, slug, description, category, type, price, compare_price,
     badge: document.getElementById('p-badge').value.trim(),
     is_featured: document.getElementById('p-featured').checked,
     isFeatured: document.getElementById('p-featured').checked,

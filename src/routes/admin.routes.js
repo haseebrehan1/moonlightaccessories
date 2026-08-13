@@ -106,13 +106,13 @@ router.get('/products', async (req, res, next) => {
 
 router.post('/products', async (req, res, next) => {
   try {
-    const { slug,name,description,category,type,badge,price,is_featured,features,variants } = req.body;
+    const { slug,name,description,category,type,badge,price,compare_price,is_featured,features,variants } = req.body;
     // One transaction for the whole product: a rejected variant used to abort
     // half way and leave a product row behind with no shades attached.
     const product = await withTransaction(async (client) => {
       const { rows } = await client.query(
-        'INSERT INTO products (slug,name,description,category,type,badge,price,is_featured) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
-        [slug,name,description,category,type,badge,price,is_featured||false]
+        'INSERT INTO products (slug,name,description,category,type,badge,price,compare_price,is_featured) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',
+        [slug,name,description,category,type,badge,price,compare_price||null,is_featured||false]
       );
       const pid = rows[0].id;
       if (features?.length)
@@ -160,11 +160,15 @@ router.put('/products/:id', async (req, res, next) => {
         `UPDATE products SET
           name=COALESCE($1,name), slug=COALESCE($2,slug), description=COALESCE($3,description),
           category=COALESCE($4,category), type=COALESCE($5,type), badge=COALESCE($6,badge),
-          price=COALESCE($7,price), compare_price=COALESCE($8,compare_price),
+          price=COALESCE($7,price),
+          -- Sending compare_price explicitly empty clears the discount;
+          -- omitting the field entirely leaves whatever is already there.
+          compare_price=CASE WHEN $12::boolean THEN NULL ELSE COALESCE($8,compare_price) END,
           is_featured=COALESCE($9,is_featured), is_active=COALESCE($10,is_active)
          WHERE id=$11 RETURNING *`,
         [name,slug,description,category,type,badge,price,compare_price,
-         (is_featured!==undefined?is_featured:isFeatured),is_active,req.params.id]
+         (is_featured!==undefined?is_featured:isFeatured),is_active,req.params.id,
+         Object.prototype.hasOwnProperty.call(req.body,'compare_price') && !compare_price]
       );
       if (!rows.length) return null;
       const pid = req.params.id;
