@@ -188,6 +188,25 @@ async function main() {
       referrer    VARCHAR(400),
       page_views  INT DEFAULT 1
     );
+    -- How far down the funnel each session reached. Flags rather than an event
+    -- log: the question is "how many people got this far", and a flag answers
+    -- it with a count instead of a scan.
+    ALTER TABLE visitors ADD COLUMN IF NOT EXISTS viewed_product    BOOLEAN DEFAULT false;
+    ALTER TABLE visitors ADD COLUMN IF NOT EXISTS added_to_cart     BOOLEAN DEFAULT false;
+    ALTER TABLE visitors ADD COLUMN IF NOT EXISTS started_checkout  BOOLEAN DEFAULT false;
+    ALTER TABLE visitors ADD COLUMN IF NOT EXISTS ordered           BOOLEAN DEFAULT false;
+
+    -- One row per product opened. Counting per product from the visitor's
+    -- current page would only ever credit the last thing they looked at, and
+    -- would lose the view entirely once they moved on to checkout.
+    CREATE TABLE IF NOT EXISTS product_views (
+      id         BIGSERIAL PRIMARY KEY,
+      session_id VARCHAR(40) NOT NULL,
+      slug       VARCHAR(200) NOT NULL,
+      title      VARCHAR(200),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_product_views_created ON product_views(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_visitors_last_seen  ON visitors(last_seen DESC);
     CREATE INDEX IF NOT EXISTS idx_visitors_first_seen ON visitors(first_seen DESC);
 

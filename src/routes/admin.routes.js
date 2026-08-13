@@ -62,25 +62,45 @@ router.get('/dashboard', async (req, res, next) => {
 // Days are counted in Pakistan time, not the server's UTC.
 router.get('/live', async (req, res, next) => {
   try {
-    const [now, today, pages] = await Promise.all([
+    const since = req.query.range === '7d'
+      ? "NOW() - INTERVAL '7 days'"
+      : "date_trunc('day', NOW() AT TIME ZONE 'Asia/Karachi') AT TIME ZONE 'Asia/Karachi'";
+
+    const [now, today, pages, funnel, viewed] = await Promise.all([
       query("SELECT COUNT(*)::int AS n FROM visitors WHERE last_seen > NOW() - INTERVAL '5 minutes'"),
       query(`SELECT COUNT(*)::int AS visitors, COALESCE(SUM(page_views),0)::int AS views
-             FROM visitors
-             WHERE first_seen >= date_trunc('day', NOW() AT TIME ZONE 'Asia/Karachi') AT TIME ZONE 'Asia/Karachi'`),
+             FROM visitors WHERE first_seen >= ${since}`),
       query(`SELECT COALESCE(NULLIF(page_title,''), path) AS page, COUNT(*)::int AS n
              FROM visitors WHERE last_seen > NOW() - INTERVAL '5 minutes'
              GROUP BY 1 ORDER BY n DESC LIMIT 6`),
+      // Where people stop. Each stage counts sessions that reached at least
+      // that far, so the numbers only ever fall as you read down.
+      query(`SELECT COUNT(*)::int                                        AS visitors,
+                    COUNT(*) FILTER (WHERE viewed_product)::int          AS viewed_product,
+                    COUNT(*) FILTER (WHERE added_to_cart)::int           AS added_to_cart,
+                    COUNT(*) FILTER (WHERE started_checkout)::int        AS started_checkout,
+                    COUNT(*) FILTER (WHERE ordered)::int                 AS ordered
+             FROM visitors WHERE first_seen >= ${since}`),
+      // Which products got looked at, counted once per visitor per product.
+      query(`SELECT slug,
+                    COALESCE(NULLIF(MAX(title),''), slug)     AS product,
+                    COUNT(DISTINCT session_id)::int           AS n
+             FROM product_views WHERE created_at >= ${since}
+             GROUP BY slug ORDER BY n DESC LIMIT 8`),
     ]);
 
     // Housekeeping while we are here: sessions older than 30 days are of no
     // use and the table would otherwise grow forever.
     query("DELETE FROM visitors WHERE last_seen < NOW() - INTERVAL '30 days'").catch(() => {});
+    query("DELETE FROM product_views WHERE created_at < NOW() - INTERVAL '30 days'").catch(() => {});
 
     res.json({
       success: true,
       active_now: now.rows[0].n,
       today: { visitors: today.rows[0].visitors, page_views: today.rows[0].views },
       viewing: pages.rows,
+      funnel: funnel.rows[0],
+      products_viewed: viewed.rows,
     });
   } catch(err) { next(err); }
 });

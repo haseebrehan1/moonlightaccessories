@@ -239,6 +239,13 @@
     }
     .nav-item:hover { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.85); }
     .nav-item.active { background: var(--accent); color: var(--white); }
+    .fn-step { margin-bottom: 14px; }
+    .fn-top { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; }
+    .fn-top strong { color: var(--text); }
+    .fn-bar { height: 8px; background: var(--border); border-radius: 99px; overflow: hidden; }
+    .fn-fill { height: 100%; background: linear-gradient(90deg, var(--accent), #16a34a); border-radius: 99px; transition: width .4s; }
+    .fn-note { font-size: 10.5px; color: var(--text-muted); margin-top: 4px; }
+    .fn-sub { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-muted); font-weight: 700; margin: 18px 0 6px; }
     .live-row {
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
       padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px;
@@ -1074,6 +1081,22 @@
             <div class="table-card">
               <div class="table-header">
                 <div>
+                  <div class="table-title">Today's Funnel</div>
+                  <div class="table-subtitle">Where visitors stop</div>
+                </div>
+                <select class="status-select" id="funnel-range" onchange="refreshLive()" style="width:120px">
+                  <option value="today">Today</option>
+                  <option value="7d">Last 7 days</option>
+                </select>
+              </div>
+              <div id="funnel-box" style="padding:6px 20px 20px">
+                <div class="live-empty">Loading…</div>
+              </div>
+            </div>
+
+            <div class="table-card">
+              <div class="table-header">
+                <div>
                   <div class="table-title">Top Products</div>
                   <div class="table-subtitle">Best selling items</div>
                 </div>
@@ -1616,7 +1639,9 @@ let liveTimer = null;
 
 async function refreshLive() {
   try {
-    const d = await api('GET', '/admin/live');
+    const range = document.getElementById('funnel-range')?.value || 'today';
+    const d = await api('GET', '/admin/live?range=' + range);
+    renderFunnel(d.funnel, d.products_viewed);
     const el = document.getElementById('stat-live');
     if (el) el.textContent = d.active_now;
 
@@ -1632,6 +1657,38 @@ async function refreshLive() {
             `<div class="live-row"><span>${escapeHtml(v.page || '—')}</span><strong>${v.n}</strong></div>`).join('');
     }
   } catch(e) { /* a failed poll should never disturb the panel */ }
+}
+
+// Each bar is a share of the visitors who arrived, so the drop between two
+// rows is the drop-off at that step.
+function renderFunnel(f, productsViewed) {
+  const box = document.getElementById('funnel-box');
+  if (!box || !f) return;
+
+  const total = f.visitors || 0;
+  if (!total) { box.innerHTML = `<div class="live-empty">No visitors in this period yet</div>`; return; }
+
+  const steps = [
+    ['Arrived on the site', f.visitors],
+    ['Opened a product',    f.viewed_product],
+    ['Added to cart',       f.added_to_cart],
+    ['Started checkout',    f.started_checkout],
+    ['Placed an order',     f.ordered],
+  ];
+
+  box.innerHTML = steps.map(([label, n], i) => {
+    const pct = Math.round((n / total) * 100);
+    const prev = i ? steps[i-1][1] : null;
+    const lost = prev !== null && prev > 0 ? prev - n : 0;
+    return `<div class="fn-step">
+      <div class="fn-top"><span>${label}</span><strong>${n}</strong></div>
+      <div class="fn-bar"><div class="fn-fill" style="width:${pct}%"></div></div>
+      <div class="fn-note">${pct}% of visitors${lost > 0 ? ` · ${lost} dropped here` : ''}</div>
+    </div>`;
+  }).join('') + (productsViewed?.length
+    ? `<div class="fn-sub">Products opened</div>` + productsViewed.map(p =>
+        `<div class="live-row"><span>${escapeHtml(String(p.product).replace(' — Moonlight Accessories',''))}</span><strong>${p.n}</strong></div>`).join('')
+    : '');
 }
 
 // Polls only while the Dashboard is open and this tab is in front, so an
