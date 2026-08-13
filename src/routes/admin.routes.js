@@ -255,11 +255,27 @@ router.delete('/products/:id', async (req, res, next) => {
 });
 
 // Customers
+// Built from orders rather than user accounts. Checkout is guest-only — a COD
+// shopper never registers — so listing users showed an empty page no matter how
+// many orders had come in. Phone number is the identity that actually repeats.
 router.get('/customers', async (req, res, next) => {
   try {
-    const { rows } = await query(
-      "SELECT u.id,u.full_name,u.email,u.phone,u.city,u.created_at,count(o.id) as order_count,COALESCE(sum(o.total),0) as total_spent FROM users u LEFT JOIN orders o ON o.user_id=u.id AND o.status!='cancelled' WHERE u.role='customer' GROUP BY u.id ORDER BY u.created_at DESC"
-    );
+    const { rows } = await query(`
+      SELECT
+        shipping_phone                                              AS phone,
+        MAX(shipping_name)                                          AS full_name,
+        MAX(shipping_email)                                         AS email,
+        MAX(shipping_city)                                          AS city,
+        MAX(shipping_address)                                       AS address,
+        COUNT(*)::int                                               AS order_count,
+        COALESCE(SUM(total) FILTER (WHERE status <> 'cancelled'),0) AS total_spent,
+        MIN(created_at)                                             AS created_at,
+        MAX(created_at)                                             AS last_order
+      FROM orders
+      WHERE shipping_phone IS NOT NULL
+      GROUP BY shipping_phone
+      ORDER BY MAX(created_at) DESC
+    `);
     res.json({ success:true, customers:rows });
   } catch(err) { next(err); }
 });

@@ -239,6 +239,11 @@
     }
     .nav-item:hover { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.85); }
     .nav-item.active { background: var(--accent); color: var(--white); }
+    .cell-sub {
+      font-size: 10.5px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
     .nav-badge {
       margin-left: auto;
       background: var(--danger);
@@ -1012,9 +1017,9 @@
               </div>
               <div class="table-responsive">
                 <table>
-                  <thead><tr><th>Order#</th><th>Customer</th><th>Amount</th><th>Status</th></tr></thead>
+                  <thead><tr><th>Order#</th><th>Customer</th><th>City</th><th>Amount</th><th>Status</th><th>Placed</th></tr></thead>
                   <tbody id="dashboard-orders-tbody">
-                    <tr class="loading-row"><td colspan="4"><span class="spinner"></span>Loading...</td></tr>
+                    <tr class="loading-row"><td colspan="6"><span class="spinner"></span>Loading...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -1029,7 +1034,7 @@
               </div>
               <div class="table-responsive">
                 <table>
-                  <thead><tr><th>Product</th><th>Category</th><th>Orders</th></tr></thead>
+                  <thead><tr><th>Product</th><th>Units Sold</th><th>Revenue</th></tr></thead>
                   <tbody id="dashboard-products-tbody">
                     <tr class="loading-row"><td colspan="3"><span class="spinner"></span>Loading...</td></tr>
                   </tbody>
@@ -1147,7 +1152,7 @@
                     <th>City</th>
                     <th>Orders</th>
                     <th>Total Spent</th>
-                    <th>Joined</th>
+                    <th>Last Order</th>
                   </tr>
                 </thead>
                 <tbody id="customers-tbody">
@@ -1697,6 +1702,26 @@ function fmtDate(d) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('en-PK', { day:'2-digit', month:'short', year:'numeric' });
 }
+// Date and clock time. An order's time matters — it decides who gets called
+// back today and who waits until the morning.
+function fmtDateTime(d) {
+  if (!d) return '—';
+  const dt = new Date(d);
+  return dt.toLocaleDateString('en-PK', { day:'2-digit', month:'short', year:'numeric' }) +
+         ', ' + dt.toLocaleTimeString('en-PK', { hour:'2-digit', minute:'2-digit', hour12:true });
+}
+// "3 minutes ago" — how fresh an order is, at a glance.
+function timeAgo(d) {
+  if (!d) return '';
+  const secs = Math.floor((Date.now() - new Date(d)) / 1000);
+  if (secs < 60) return 'just now';
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return mins + (mins === 1 ? ' min ago' : ' mins ago');
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + (hrs === 1 ? ' hour ago' : ' hours ago');
+  const days = Math.floor(hrs / 24);
+  return days + (days === 1 ? ' day ago' : ' days ago');
+}
 function statusBadge(s) {
   return `<span class="badge badge-${s || 'pending'}">${s || 'pending'}</span>`;
 }
@@ -1718,11 +1743,14 @@ async function loadDashboard() {
     const data = await api('GET', '/admin/dashboard');
     const d = data.data || data;
 
-    const totalRev = d.revenue?.total ?? d.totalRevenue ?? d.stats?.totalRevenue ?? 0;
-    const monthRev = d.revenue?.monthly ?? d.monthlyRevenue ?? d.stats?.monthlyRevenue ?? 0;
-    const totalOrders = d.orders?.total ?? d.totalOrders ?? d.stats?.totalOrders ?? 0;
-    const products = d.products?.total ?? d.totalProducts ?? d.stats?.totalProducts ?? 0;
-    const customers = d.customers?.total ?? d.totalCustomers ?? d.stats?.totalCustomers ?? 0;
+    // The API nests these under `stats` and uses snake_case. The panel was
+    // reading camelCase keys that never existed, so every figure read zero.
+    const s = d.stats || {};
+    const totalRev = s.revenue?.total ?? 0;
+    const monthRev = s.revenue?.monthly ?? 0;
+    const totalOrders = s.total_orders ?? 0;
+    const products = s.products ?? 0;
+    const customers = s.customers ?? 0;
 
     document.getElementById('stat-total-rev').textContent = fmtCurrency(totalRev);
     document.getElementById('stat-month-rev').textContent = fmtCurrency(monthRev);
@@ -1731,22 +1759,24 @@ async function loadDashboard() {
     document.getElementById('stat-customers').textContent = customers;
 
     // Recent orders
-    const recentOrders = d.recentOrders ?? d.orders?.recent ?? [];
+    const recentOrders = d.recent_orders ?? [];
     const otbody = document.getElementById('dashboard-orders-tbody');
     if (recentOrders.length === 0) {
-      otbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--text-muted)">No orders yet</td></tr>`;
+      otbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text-muted)">No orders yet</td></tr>`;
     } else {
-      otbody.innerHTML = recentOrders.slice(0,5).map(o => `
-        <tr>
-          <td><strong>#${o.orderNumber || o._id?.slice(-6) || '—'}</strong></td>
-          <td>${o.customerName || o.customer?.name || '—'}</td>
-          <td>${fmtCurrency(o.totalAmount ?? o.total)}</td>
+      otbody.innerHTML = recentOrders.slice(0,6).map(o => `
+        <tr class="order-row" onclick="navigateTo('orders')">
+          <td><strong>#${o.order_number || '—'}</strong></td>
+          <td>${o.shipping_name || '—'}<div class="cell-sub">${o.shipping_phone || ''}</div></td>
+          <td>${o.shipping_city || '—'}</td>
+          <td><strong>${fmtCurrency(o.total)}</strong></td>
           <td>${statusBadge(o.status)}</td>
+          <td>${fmtDateTime(o.created_at)}<div class="cell-sub">${timeAgo(o.created_at)}</div></td>
         </tr>`).join('');
     }
 
     // Top products
-    const topProducts = d.topProducts ?? d.products?.top ?? [];
+    const topProducts = d.top_products ?? [];
     const ptbody = document.getElementById('dashboard-products-tbody');
     if (topProducts.length === 0) {
       ptbody.innerHTML = `<tr><td colspan="3" style="text-align:center;padding:30px;color:var(--text-muted)">No data yet</td></tr>`;
@@ -1754,8 +1784,8 @@ async function loadDashboard() {
       ptbody.innerHTML = topProducts.slice(0,6).map(p => `
         <tr>
           <td><span class="product-thumb">✨</span>${p.name || '—'}</td>
-          <td>${p.category || '—'}</td>
-          <td>${p.orderCount ?? p.orders ?? '—'}</td>
+          <td><strong>${p.sold ?? 0}</strong></td>
+          <td>${fmtCurrency(p.revenue || 0)}</td>
         </tr>`).join('');
     }
   } catch(e) {
@@ -1788,11 +1818,9 @@ function filterOrders() {
   const search = document.getElementById('order-search').value.toLowerCase();
   let filtered = allOrders;
   if (statusFilter) filtered = filtered.filter(o => o.status === statusFilter);
-  if (search) filtered = filtered.filter(o => {
-    const name = (o.customerName || o.customer?.name || '').toLowerCase();
-    const num = String(o.orderNumber || o._id || '').toLowerCase();
-    return name.includes(search) || num.includes(search);
-  });
+  if (search) filtered = filtered.filter(o =>
+    [o.shipping_name, o.order_number, o.shipping_phone, o.shipping_city]
+      .some(v => String(v || '').toLowerCase().includes(search)));
   renderOrders(filtered);
 }
 
@@ -1803,22 +1831,21 @@ function renderOrders(orders) {
     return;
   }
   tbody.innerHTML = orders.map(o => {
-    const id = o._id || o.id;
-    const num = o.orderNumber || id?.slice(-6) || '—';
-    const cust = o.customerName || o.shippingAddress?.name || o.customer?.name || '—';
-    const city = o.shippingAddress?.city || o.city || '—';
-    const amount = fmtCurrency(o.totalAmount ?? o.total ?? o.amount);
-    const payment = o.paymentMethod || o.payment?.method || '';
+    const id = o.id;
+    const num = o.order_number || '—';
+    const cust = o.shipping_name || '—';
     const status = o.status || 'pending';
-    const date = fmtDate(o.createdAt);
     return `<tr class="order-row" onclick="openOrderModal('${id}')">
       <td><strong>#${num}</strong></td>
-      <td><span class="customer-avatar">${initials(cust)}</span>${cust}</td>
-      <td>${city}</td>
-      <td><strong>${amount}</strong></td>
-      <td>${paymentBadge(payment)}</td>
+      <td>
+        <span class="customer-avatar">${initials(cust)}</span>${cust}
+        <div class="cell-sub">${o.shipping_phone || ''}</div>
+      </td>
+      <td>${o.shipping_city || '—'}<div class="cell-sub">${o.item_count || 0} item${o.item_count == 1 ? '' : 's'}</div></td>
+      <td><strong>${fmtCurrency(o.total)}</strong></td>
+      <td>${paymentBadge(o.payment_method)}</td>
       <td>${statusBadge(status)}</td>
-      <td>${date}</td>
+      <td>${fmtDateTime(o.created_at)}<div class="cell-sub">${timeAgo(o.created_at)}</div></td>
       <td onclick="event.stopPropagation()">
         <div class="actions-cell">
           <select class="status-select" onchange="quickUpdateStatus('${id}', this.value)">
@@ -1842,16 +1869,28 @@ async function quickUpdateStatus(id, status) {
   }
 }
 
-function openOrderModal(id) {
-  const order = allOrders.find(o => (o._id||o.id) === id);
-  if (!order) return;
+async function openOrderModal(id) {
   currentOrderId = id;
-  const num = order.orderNumber || id.slice(-6);
+  document.getElementById('order-modal-body').innerHTML =
+    `<div style="padding:40px;text-align:center;color:var(--text-muted)"><span class="spinner"></span> Loading order…</div>`;
+  openModal('order-modal-overlay');
+
+  // The list endpoint returns a count of items, not the items themselves, so
+  // the full order has to be fetched or the modal shows an empty basket.
+  let order;
+  try {
+    order = (await api('GET', `/admin/orders/${id}`)).order;
+  } catch (e) {
+    document.getElementById('order-modal-body').innerHTML =
+      `<div style="padding:40px;text-align:center;color:var(--danger)">Could not load this order: ${e.message}</div>`;
+    return;
+  }
+
+  const num = order.order_number || '—';
   document.getElementById('order-modal-title').textContent = `Order #${num}`;
 
-  const addr = order.shippingAddress || {};
-  const cust = order.customerName || addr.name || order.customer?.name || '—';
-  const items = order.items || order.orderItems || [];
+  const cust = order.shipping_name || '—';
+  const items = order.items || [];
 
   const statusSel = document.getElementById('order-status-select');
   statusSel.innerHTML = STATUSES.map(s => `<option value="${s}"${s===order.status?' selected':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`).join('');
@@ -1859,13 +1898,26 @@ function openOrderModal(id) {
   document.getElementById('order-modal-body').innerHTML = `
     <div class="order-info-grid">
       <div class="order-info-item"><div class="order-info-label">Customer</div><div class="order-info-value">${cust}</div></div>
-      <div class="order-info-item"><div class="order-info-label">Phone</div><div class="order-info-value">${addr.phone || order.phone || '—'}</div></div>
-      <div class="order-info-item"><div class="order-info-label">City</div><div class="order-info-value">${addr.city || order.city || '—'}</div></div>
-      <div class="order-info-item"><div class="order-info-label">Address</div><div class="order-info-value">${addr.address || addr.street || '—'}</div></div>
-      <div class="order-info-item"><div class="order-info-label">Payment Method</div><div class="order-info-value">${paymentBadge(order.paymentMethod || order.payment?.method)}</div></div>
-      <div class="order-info-item"><div class="order-info-label">Order Date</div><div class="order-info-value">${fmtDate(order.createdAt)}</div></div>
+      <div class="order-info-item">
+        <div class="order-info-label">Phone</div>
+        <div class="order-info-value">
+          ${order.shipping_phone
+            ? `<a href="tel:${order.shipping_phone}">${order.shipping_phone}</a>
+               &nbsp;<a href="https://wa.me/92${String(order.shipping_phone).replace(/\D/g,'').replace(/^92/,'').replace(/^0/,'')}" target="_blank" style="font-size:11px">WhatsApp</a>`
+            : '—'}
+        </div>
+      </div>
+      <div class="order-info-item"><div class="order-info-label">City</div><div class="order-info-value">${order.shipping_city || '—'}</div></div>
+      <div class="order-info-item"><div class="order-info-label">Email</div><div class="order-info-value">${order.shipping_email || '—'}</div></div>
+      <div class="order-info-item" style="grid-column:1/-1"><div class="order-info-label">Delivery Address</div><div class="order-info-value">${order.shipping_address || '—'}</div></div>
+      <div class="order-info-item"><div class="order-info-label">Payment</div><div class="order-info-value">${paymentBadge(order.payment_method)} <span style="font-size:11px;color:var(--text-muted)">${order.payment_status || ''}</span></div></div>
+      <div class="order-info-item"><div class="order-info-label">Placed</div><div class="order-info-value">${fmtDateTime(order.created_at)}<div class="cell-sub">${timeAgo(order.created_at)}</div></div></div>
       <div class="order-info-item"><div class="order-info-label">Status</div><div class="order-info-value">${statusBadge(order.status)}</div></div>
-      <div class="order-info-item"><div class="order-info-label">Total</div><div class="order-info-value" style="font-size:17px;font-weight:700;color:var(--accent)">${fmtCurrency(order.totalAmount ?? order.total)}</div></div>
+      <div class="order-info-item">
+        <div class="order-info-label">Total</div>
+        <div class="order-info-value" style="font-size:17px;font-weight:700;color:var(--accent)">${fmtCurrency(order.total)}</div>
+        <div class="cell-sub">${fmtCurrency(order.subtotal)} + ${Number(order.shipping_fee) ? fmtCurrency(order.shipping_fee) + ' delivery' : 'free delivery'}</div>
+      </div>
     </div>
     <div class="divider"></div>
     <div class="section-label">Order Items (${items.length})</div>
@@ -1877,17 +1929,17 @@ function openOrderModal(id) {
             ? `<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text-muted)">No items</td></tr>`
             : items.map(item => `
             <tr>
-              <td><strong>${item.productName || item.name || item.product?.name || '—'}</strong></td>
-              <td>${item.shade || item.variant || '—'}</td>
-              <td>${item.quantity ?? item.qty ?? 1}</td>
-              <td>${fmtCurrency(item.price)}</td>
-              <td><strong>${fmtCurrency((item.price||0)*(item.quantity||item.qty||1))}</strong></td>
+              <td><strong>${item.product_name || '—'}</strong></td>
+              <td>${item.shade_name || '—'}</td>
+              <td>${item.quantity ?? 1}</td>
+              <td>${fmtCurrency(item.unit_price)}</td>
+              <td><strong>${fmtCurrency(item.line_total)}</strong></td>
             </tr>`).join('')
           }
         </tbody>
       </table>
     </div>
-    ${order.notes ? `<div style="margin-top:14px;padding:12px 14px;background:#f8fafc;border-radius:8px;font-size:13px;color:var(--text-muted)"><strong>Note:</strong> ${order.notes}</div>` : ''}
+    ${order.shipping_notes ? `<div style="margin-top:14px;padding:12px 14px;background:#f8fafc;border-radius:8px;font-size:13px;color:var(--text-muted)"><strong>Customer note:</strong> ${order.shipping_notes}</div>` : ''}
   `;
 
   openModal('order-modal-overlay');
@@ -2385,7 +2437,7 @@ function filterCustomers() {
   const search = document.getElementById('customer-search').value.toLowerCase();
   const filtered = search
     ? allCustomers.filter(c =>
-        (c.name||'').toLowerCase().includes(search) ||
+        (c.full_name||'').toLowerCase().includes(search) ||
         (c.email||'').toLowerCase().includes(search) ||
         (c.phone||'').toLowerCase().includes(search) ||
         (c.city||'').toLowerCase().includes(search)
@@ -2402,13 +2454,13 @@ function renderCustomers(customers) {
   }
   tbody.innerHTML = customers.map(c => `
     <tr>
-      <td><span class="customer-avatar">${initials(c.name)}</span><strong>${c.name || '—'}</strong></td>
+      <td><span class="customer-avatar">${initials(c.full_name)}</span><strong>${c.full_name || '—'}</strong></td>
       <td style="color:var(--text-muted)">${c.email || '—'}</td>
-      <td>${c.phone || c.phoneNumber || '—'}</td>
-      <td>${c.city || c.address?.city || '—'}</td>
-      <td><strong>${c.orderCount ?? c.orders ?? '—'}</strong></td>
-      <td><strong style="color:var(--accent)">${fmtCurrency(c.totalSpent ?? c.spent)}</strong></td>
-      <td>${fmtDate(c.createdAt || c.joinedAt)}</td>
+      <td>${c.phone || '—'}</td>
+      <td>${c.city || '—'}</td>
+      <td><strong>${c.order_count ?? 0}</strong>${c.order_count > 1 ? '<div class="cell-sub">repeat</div>' : ''}</td>
+      <td><strong style="color:var(--accent)">${fmtCurrency(c.total_spent)}</strong></td>
+      <td>${fmtDate(c.last_order)}<div class="cell-sub">${timeAgo(c.last_order)}</div></td>
     </tr>`).join('');
 }
 
