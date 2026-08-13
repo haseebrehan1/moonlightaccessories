@@ -173,7 +173,13 @@ ufw status numbered
 log "Requesting TLS certificate"
 if certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN" \
            --non-interactive --agree-tos --register-unsafely-without-email --redirect; then
-    systemctl reload nginx
+    # certbot writes plain `listen 443 ssl`. Customers are a long way from this
+    # server, so multiplexing every request over one connection instead of
+    # opening six — each paying a fresh TLS handshake — is worth having.
+    CONF="/etc/nginx/sites-available/$DOMAIN"
+    sed -i 's/^\(\s*listen 443 ssl\);/\1 http2;/' "$CONF"
+    sed -i 's/^\(\s*listen \[::\]:443 ssl\) ipv6only=on;/\1 http2 ipv6only=on;/' "$CONF"
+    nginx -t && systemctl reload nginx
 else
     echo "!! certbot failed — site is up on HTTP. Confirm DNS points here, then re-run:"
     echo "   certbot --nginx -d $DOMAIN -d www.$DOMAIN --redirect"
