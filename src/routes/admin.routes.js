@@ -274,6 +274,29 @@ router.get('/reviews', async (req, res, next) => {
   } catch(err) { next(err); }
 });
 
+// Records a review the shop received somewhere other than the website — a
+// WhatsApp message, an Instagram comment, a note with a returned parcel. It
+// publishes immediately, since whoever enters it has already seen it.
+// The date can be backdated to when the customer actually said it.
+router.post('/reviews', async (req, res, next) => {
+  try {
+    const { product_id, reviewer_name, rating, comment, created_at } = req.body;
+    if (!product_id) return res.status(400).json({ success:false, message:'Pick a product.' });
+    if (!(rating >= 1 && rating <= 5)) return res.status(400).json({ success:false, message:'Rating must be 1 to 5.' });
+    if (!reviewer_name?.trim()) return res.status(400).json({ success:false, message:'Reviewer name is required.' });
+
+    const { rows } = await query(
+      `INSERT INTO reviews (product_id,reviewer_name,rating,comment,is_approved,created_at)
+       VALUES ($1,$2,$3,$4,true,COALESCE($5::timestamptz, NOW())) RETURNING *`,
+      [product_id, reviewer_name.trim(), rating, comment?.trim() || null, created_at || null]
+    );
+    res.status(201).json({ success:true, review:rows[0] });
+  } catch(err) {
+    if (err.code === '23503') return res.status(400).json({ success:false, message:'That product no longer exists.' });
+    next(err);
+  }
+});
+
 router.put('/reviews/:id/approve', async (req, res, next) => {
   try {
     await query('UPDATE reviews SET is_approved=true WHERE id=$1', [req.params.id]);

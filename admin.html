@@ -1174,6 +1174,7 @@
                   <option value="all">All</option>
                 </select>
               </div>
+              <button class="btn btn-primary btn-sm" onclick="openReviewModal()">+ Add Review</button>
               <button class="btn btn-secondary btn-sm" onclick="loadReviews()">↻ Refresh</button>
             </div>
             <div class="table-responsive">
@@ -1205,6 +1206,56 @@
 <!-- ═══════════════════ MODALS ═══════════════════ -->
 
 <!-- ORDER DETAIL MODAL -->
+<!-- ADD REVIEW MODAL -->
+<div class="modal-overlay" id="review-modal-overlay" onclick="if(event.target===this)closeModal('review-modal-overlay')">
+  <div class="modal">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Add a Review</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:3px">
+          For feedback a customer gave you elsewhere — WhatsApp, Instagram, or in person
+        </div>
+      </div>
+      <button class="modal-close" onclick="closeModal('review-modal-overlay')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>Product *</label>
+          <select id="rv-product"></select>
+        </div>
+        <div class="form-group">
+          <label>Customer Name *</label>
+          <input type="text" id="rv-name" placeholder="e.g. Sana" maxlength="80" />
+        </div>
+        <div class="form-group">
+          <label>Rating *</label>
+          <select id="rv-rating">
+            <option value="5">★★★★★ &nbsp;5</option>
+            <option value="4">★★★★☆ &nbsp;4</option>
+            <option value="3">★★★☆☆ &nbsp;3</option>
+            <option value="2">★★☆☆☆ &nbsp;2</option>
+            <option value="1">★☆☆☆☆ &nbsp;1</option>
+          </select>
+        </div>
+        <div class="form-group full">
+          <label>What they said *</label>
+          <textarea id="rv-comment" rows="3" maxlength="1000" placeholder="Their words, as close to how they said it as possible"></textarea>
+        </div>
+        <div class="form-group full">
+          <label>Date received</label>
+          <input type="date" id="rv-date" />
+          <small class="fld-note">Leave empty for today. Backdate it to when they actually said it.</small>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('review-modal-overlay')">Cancel</button>
+      <button class="btn btn-primary" id="rv-save-btn" onclick="saveManualReview()">Add Review</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="order-modal-overlay" onclick="closeOrderModal(event)">
   <div class="modal modal-lg">
     <div class="modal-header">
@@ -1565,6 +1616,52 @@ function renderReviews() {
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c =>
     ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+async function openReviewModal() {
+  // The product list may not be loaded yet if Reviews was opened first.
+  if (!allProducts.length) {
+    try { allProducts = (await api('GET', '/admin/products')).products || []; } catch(e) {}
+  }
+  const sel = document.getElementById('rv-product');
+  sel.innerHTML = allProducts
+    .map(p => `<option value="${p.id}">${p.name}${p.type ? ' — ' + p.type : ''}</option>`).join('');
+  document.getElementById('rv-name').value = '';
+  document.getElementById('rv-comment').value = '';
+  document.getElementById('rv-date').value = '';
+  document.getElementById('rv-rating').value = '5';
+  openModal('review-modal-overlay');
+  setTimeout(() => document.getElementById('rv-name').focus(), 100);
+}
+
+async function saveManualReview() {
+  const btn = document.getElementById('rv-save-btn');
+  const name = document.getElementById('rv-name').value.trim();
+  const comment = document.getElementById('rv-comment').value.trim();
+  const date = document.getElementById('rv-date').value;
+
+  if (!name)    return toast('Enter the customer\'s name', 'warning');
+  if (!comment) return toast('Enter what they said', 'warning');
+
+  btn.disabled = true;
+  btn.textContent = 'Adding…';
+  try {
+    await api('POST', '/admin/reviews', {
+      product_id: document.getElementById('rv-product').value,
+      reviewer_name: name,
+      rating: parseInt(document.getElementById('rv-rating').value),
+      comment,
+      created_at: date ? new Date(date).toISOString() : null,
+    });
+    closeModal('review-modal-overlay');
+    toast('Review added and published', 'success');
+    loadReviews();
+  } catch(e) {
+    toast('Failed to add review: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Add Review';
+  }
 }
 
 async function approveReview(id) {
