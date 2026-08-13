@@ -156,6 +156,7 @@ systemctl is-active --quiet moonlight-api \
 log "Configuring nginx"
 install -m 644 "$APP_DIR/deploy/nginx/$DOMAIN.conf" "/etc/nginx/sites-available/$DOMAIN"
 ln -sf "/etc/nginx/sites-available/$DOMAIN" "/etc/nginx/sites-enabled/$DOMAIN"
+install -m 644 "$APP_DIR/deploy/nginx/gzip.conf" /etc/nginx/conf.d/gzip.conf
 rm -f /etc/nginx/sites-enabled/default
 nginx -t
 systemctl enable nginx
