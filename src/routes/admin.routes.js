@@ -33,8 +33,11 @@ router.get('/dashboard', async (req, res, next) => {
       query('SELECT status, COUNT(*) as count FROM orders GROUP BY status'),
       query("SELECT COALESCE(SUM(total),0) as total, COALESCE(SUM(CASE WHEN created_at>=date_trunc('month',NOW()) THEN total ELSE 0 END),0) as month FROM orders WHERE status NOT IN ('cancelled','refunded')"),
       query("SELECT COUNT(*) as count FROM products WHERE is_active=true"),
-      query("SELECT COUNT(*) as count FROM users WHERE role='customer'"),
-      query("SELECT o.id,o.order_number,o.status,o.payment_method,o.total,o.shipping_name,o.shipping_city,o.created_at FROM orders o ORDER BY o.created_at DESC LIMIT 10"),
+      // Counted the same way the Customers page lists them — by the people who
+      // have actually ordered. Counting user rows read zero, because checkout
+      // is guest-only and nobody registers.
+      query('SELECT COUNT(DISTINCT shipping_phone) as count FROM orders WHERE shipping_phone IS NOT NULL'),
+      query("SELECT o.id,o.order_number,o.status,o.payment_method,o.total,o.shipping_name,o.shipping_phone,o.shipping_city,o.created_at FROM orders o ORDER BY o.created_at DESC LIMIT 10"),
       query("SELECT p.name,SUM(oi.quantity) as sold,SUM(oi.line_total) as revenue FROM order_items oi JOIN products p ON p.id=oi.product_id GROUP BY p.id ORDER BY sold DESC LIMIT 5"),
     ]);
     const byStatus = {};
